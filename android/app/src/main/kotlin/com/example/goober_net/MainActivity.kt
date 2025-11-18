@@ -1,4 +1,4 @@
-package com.example.goober_net
+package com.DylanJ.goober_net
 
 import io.flutter.embedding.android.FlutterActivity
 
