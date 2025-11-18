@@ -4,6 +4,7 @@ import 'package:firebase_auth/firebase_auth.dart';
 import 'package:firebase_core/firebase_core.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_dotenv/flutter_dotenv.dart';
+import 'package:goober_net/settings.dart';
 import 'package:goober_net/sign_in_page.dart';
 import 'package:goober_net/upload_page.dart';
 import 'package:image_picker/image_picker.dart';
@@ -48,6 +49,7 @@ class MyApp extends StatelessWidget {
       debugShowCheckedModeBanner: false,
       routes: {
         '/home': (context) => HomePage(),
+        '/SignIn': (context) => const SignInPage(),
       },
     );
   }
@@ -80,6 +82,17 @@ final users = FirebaseFirestore.instance.collection('Posts');
         return Scaffold(
             appBar: AppBar(
               title: const Text('Thingy'),
+              actions: [
+                IconButton(
+                  onPressed: () async {
+                    Navigator.push(
+                      context,
+                      MaterialPageRoute(builder: (context) => SettingsPage())
+                    );
+                  },
+                  icon: const Icon(Icons.settings),
+                )
+              ],
             ),
             body: Stack(
               children: [
