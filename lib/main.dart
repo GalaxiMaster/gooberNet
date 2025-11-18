@@ -12,7 +12,7 @@ import 'package:image_picker/image_picker.dart';
 void main() async{
   WidgetsFlutterBinding.ensureInitialized();
   await Firebase.initializeApp();
-  await dotenv.load(fileName: ".env");
+  await dotenv.load();
 
   runApp(const MyApp());
 }
@@ -62,7 +62,9 @@ class HomePage extends StatefulWidget {
 }
 
 class HomePageState extends State<HomePage> {
-final users = FirebaseFirestore.instance.collection('Posts');
+  final users = FirebaseFirestore.instance.collection('Posts');
+  final likes = FirebaseFirestore.instance.collection('Likes');
+
   @override
   void initState() {
     super.initState();
@@ -97,7 +99,7 @@ final users = FirebaseFirestore.instance.collection('Posts');
             body: Stack(
               children: [
                 ListView(
-                  children: docs.map((d) => postTemplate(context, d .data())).toList(),
+                  children: docs.map((d) => postTemplate(context, d.data(), likes.doc(d.id), d.id)).toList(),
                 ),
                 Positioned(
                   bottom: 20,
@@ -143,6 +145,7 @@ final users = FirebaseFirestore.instance.collection('Posts');
                       await FirebaseFirestore.instance.collection('Posts').add({
                         'authorID': FirebaseAuth.instance.currentUser!.uid,
                         'postDate': DateTime.now(),
+                        'likeCount': 0,
                         'caption': details,
                         'imageName': uniqueName,
                       });
@@ -158,10 +161,12 @@ final users = FirebaseFirestore.instance.collection('Posts');
 
   }
 
-  Widget postTemplate(BuildContext context, Map postData) {
+  Widget postTemplate(BuildContext context, Map postData, DocumentReference? favorited, postId) {
     final postDate = postData['postDate'].toDate();
     final minutesPassed = DateTime.now().difference(postDate).inMinutes;
     Future<Map> userData = getUser(postData['authorID']);
+    final postRef = FirebaseFirestore.instance.collection('Posts').doc(postId.toString());
+    final currentUid = FirebaseAuth.instance.currentUser?.uid;
     return Column(
       children: [
         Stack(
@@ -233,13 +238,84 @@ final users = FirebaseFirestore.instance.collection('Posts');
                 spacing: 20,
                 children: [
                   SizedBox(
-                    child: Row(
-                      spacing: 5,
-                      children: [
-                        Icon(Icons.favorite_border),
-                        Text('0')
-                      ],
-                    )
+                    child: StreamBuilder<DocumentSnapshot>(
+                      stream: currentUid == null ? const Stream.empty() : postRef.collection('Likes').doc(currentUid).snapshots(),
+                      builder: (context, likeSnap) {
+                        final hasLiked = likeSnap.hasData && likeSnap.data!.exists;
+                        final likeCount = (postData['likeCount'] ?? 0) as int;
+                        return GestureDetector(
+                          onLongPress: () {
+                            showModalBottomSheet(
+                              context: context,
+                              builder: (ctx) {
+                                return FutureBuilder<QuerySnapshot>(
+                                  future: postRef.collection('Likes').orderBy('createdAt', descending: true).limit(50).get(),
+                                  builder: (context, likesSnap) {
+                                    if (likesSnap.connectionState == ConnectionState.waiting) {
+                                      return SizedBox(height: 200, child: Center(child: CircularProgressIndicator()));
+                                    }
+                                    if (!likesSnap.hasData || likesSnap.data!.docs.isEmpty) {
+                                      return SizedBox(height: 200, child: Center(child: Text('No likes yet')));
+                                    }
+                                    final likeDocs = likesSnap.data!.docs;
+                                    return SizedBox(
+                                      height: 300,
+                                      child: ListView(
+                                        children: likeDocs.map((d) {
+                                          final data = d.data() as Map<String, dynamic>;
+                                          final name = data['displayName'] ?? data['userId'] ?? 'User';
+                                          final photo = data['photoUrl'] as String?;
+                                          return ListTile(
+                                            leading: photo != null
+                                              ? CircleAvatar(backgroundImage: NetworkImage(photo))
+                                              : CircleAvatar(child: Icon(Icons.person)),
+                                            title: Text(name),
+                                          );
+                                        }).toList(),
+                                      ),
+                                    );
+                                  },
+                                );
+                              },
+                            );
+
+                          },
+
+                          onTap: () async {
+                            if (currentUid == null) {
+                              // Not signed in: optionally navigate to sign-in
+                              Navigator.pushNamed(context, '/SignIn');
+                              return;
+                            }
+
+                            final likeDocRef = postRef.collection('Likes').doc(currentUid);
+
+                            await FirebaseFirestore.instance.runTransaction((tx) async {
+                              final likeSnapshot = await tx.get(likeDocRef);
+                              if (likeSnapshot.exists) {
+                                tx.delete(likeDocRef);
+                                tx.update(postRef, {'likeCount': FieldValue.increment(-1)});
+                              } else {
+                                tx.set(likeDocRef, {
+                                  'createdAt': FieldValue.serverTimestamp(),
+                                  'displayName': FirebaseAuth.instance.currentUser?.displayName,
+                                  'photoUrl': FirebaseAuth.instance.currentUser?.photoURL,
+                                  'userId': currentUid,
+                                });
+                                tx.update(postRef, {'likeCount': FieldValue.increment(1)});
+                              }
+                            });
+                          },
+                          child: Row(
+                            spacing: 5,
+                            children: [
+                              Icon(hasLiked ? Icons.favorite : Icons.favorite_border),
+                              Text('$likeCount')
+                            ],
+                          ),
+                        );
+                      },
+                    ),
                   ),
                   SizedBox(
                     child: Row(
