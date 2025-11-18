@@ -141,7 +141,7 @@ final users = FirebaseFirestore.instance.collection('Posts');
                       );
 
                       await FirebaseFirestore.instance.collection('Posts').add({
-                        'postAuthor': FirebaseAuth.instance.currentUser?.displayName ?? FirebaseAuth.instance.currentUser!.email,
+                        'authorID': FirebaseAuth.instance.currentUser!.uid,
                         'postDate': DateTime.now(),
                         'caption': details,
                         'imageName': uniqueName,
@@ -161,7 +161,7 @@ final users = FirebaseFirestore.instance.collection('Posts');
   Widget postTemplate(BuildContext context, Map postData) {
     final postDate = postData['postDate'].toDate();
     final minutesPassed = DateTime.now().difference(postDate).inMinutes;
-
+    Future<Map> userData = getUser(postData['authorID']);
     return Column(
       children: [
         Stack(
@@ -187,28 +187,41 @@ final users = FirebaseFirestore.instance.collection('Posts');
             Positioned(
               top: 5,
               left: 5,
-              child: Row(
-                spacing: 5,
-                children: [
-                  FirebaseAuth.instance.currentUser!.photoURL != null
-                  ? CircleAvatar(
-                    backgroundImage: NetworkImage(FirebaseAuth.instance.currentUser!.photoURL!),
-                    radius: 15,
-                  )
-                  : Container(
-                    width: 30,
-                    height: 30,
-                    decoration: BoxDecoration(
-                      color: Colors.grey,
-                      borderRadius: BorderRadius.circular(20),
-                    ),
-                    child: Center(child: Icon(Icons.person)),
-                  ),
-                  Text(
-                    postData['postAuthor'],
-                  ),
-                ],
-              )
+              child: FutureBuilder(
+              future: userData,
+              builder: (context, snapshot) {
+                if (snapshot.connectionState == ConnectionState.waiting) {
+                  return const Center(child: CircularProgressIndicator());
+                } else if (snapshot.hasError) {
+                  return const Center(child: Text('Error loading data'));
+                } else if (snapshot.hasData) {
+                  return Row(
+                    spacing: 5,
+                    children: [
+                      snapshot.data!['profilePictureUrl'] != null
+                      ? CircleAvatar(
+                        backgroundImage: NetworkImage(snapshot.data!['profilePictureUrl']),
+                        radius: 15,
+                      )
+                      : Container(
+                        width: 30,
+                        height: 30,
+                        decoration: BoxDecoration(
+                          color: Colors.grey,
+                          borderRadius: BorderRadius.circular(20),
+                        ),
+                        child: Center(child: Icon(Icons.person)),
+                      ),
+                      Text(
+                        snapshot.data!['displayName'],
+                      ),
+                    ],
+                  );
+                } else {
+                  return const Center(child: Text('No data available'));
+                }
+              },
+              ),
             ),
           ],
         ),
@@ -281,4 +294,13 @@ final users = FirebaseFirestore.instance.collection('Posts');
       ],
     );
   }
+}
+
+Future<Map> getUser(String userId) async {
+  DocumentSnapshot doc = await FirebaseFirestore.instance
+      .collection('Users')
+      .doc(userId)
+      .get();
+
+  return doc.data() as Map;
 }

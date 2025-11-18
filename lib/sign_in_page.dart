@@ -1,4 +1,5 @@
 import 'dart:async';
+import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_dotenv/flutter_dotenv.dart';
@@ -38,8 +39,16 @@ class SignInPageState extends State<SignInPage> {
                 idToken: authentication.idToken,
               );
 
-              await FirebaseAuth.instance.signInWithCredential(credential);
+              UserCredential userCredential = await FirebaseAuth.instance.signInWithCredential(credential);
               debugPrint('Firebase sign-in complete for ${user.email}');
+              bool isNew = userCredential.additionalUserInfo?.isNewUser ?? false;
+
+              if (isNew) {
+                await FirebaseFirestore.instance.collection('Users').doc(FirebaseAuth.instance.currentUser!.uid).set({
+                  'displayName': FirebaseAuth.instance.currentUser!.displayName ?? '',
+                  'profilePictureUrl': FirebaseAuth.instance.currentUser!.photoURL ?? '',
+                });
+              }
               if (mounted){
                 Navigator.pushReplacementNamed(context, '/home');
               }
