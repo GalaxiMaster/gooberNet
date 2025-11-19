@@ -4,6 +4,7 @@ import 'package:firebase_auth/firebase_auth.dart';
 import 'package:firebase_core/firebase_core.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_dotenv/flutter_dotenv.dart';
+import 'package:goober_net/profile.dart';
 import 'package:goober_net/settings.dart';
 import 'package:goober_net/sign_in_page.dart';
 import 'package:goober_net/upload_page.dart';
@@ -44,8 +45,13 @@ class MyApp extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return MaterialApp(
-      theme: ThemeData(useMaterial3: true, colorScheme: ColorScheme.fromSeed(seedColor: Colors.blue)),
-      home: const AuthGate(),
+      theme: ThemeData.dark().copyWith(
+        scaffoldBackgroundColor: Color.fromARGB(255, 12, 16, 20),
+        appBarTheme: AppBarTheme(
+          backgroundColor: Color.fromARGB(255, 12, 16, 20),
+        ),
+        colorScheme: ColorScheme.dark()
+      ),      home: const AuthGate(),
       debugShowCheckedModeBanner: false,
       routes: {
         '/home': (context) => HomePage(),
@@ -62,7 +68,7 @@ class HomePage extends StatefulWidget {
 }
 
 class HomePageState extends State<HomePage> {
-  final users = FirebaseFirestore.instance.collection('Posts');
+  final users = FirebaseFirestore.instance.collection('Posts').orderBy('postDate', descending: true);
   final likes = FirebaseFirestore.instance.collection('Likes');
 
   @override
@@ -132,7 +138,7 @@ class HomePageState extends State<HomePage> {
                       final uniqueName = '${DateTime.now().millisecondsSinceEpoch}_${FirebaseAuth.instance.currentUser?.uid ?? 'anon'}$extension';
 
                       // Upload and capture the returned URL so we can store it in Firestore.
-                      await uploader.uploadFile(
+                      await uploader.uploadFile( // ! TODO DEAL WITH BIG FILES
                         fileBytes: bytes,
                         fileName: uniqueName,
                         onProgress: (progress) {
@@ -142,13 +148,14 @@ class HomePageState extends State<HomePage> {
                         },
                       );
 
-                      await FirebaseFirestore.instance.collection('Posts').add({
+                      DocumentReference docId = await FirebaseFirestore.instance.collection('Posts').add({
                         'authorID': FirebaseAuth.instance.currentUser!.uid,
                         'postDate': DateTime.now(),
                         'likeCount': 0,
                         'caption': details,
                         'imageName': uniqueName,
                       });
+                      await FirebaseFirestore.instance.collection('Users').doc(FirebaseAuth.instance.currentUser?.uid).collection('Posts').doc(docId.id).set({});
                     },
                     child: Icon(Icons.add),
                   ),
@@ -160,8 +167,18 @@ class HomePageState extends State<HomePage> {
     );
 
   }
+}
 
-  Widget postTemplate(BuildContext context, Map postData, DocumentReference? favorited, postId) {
+Future<Map> getUser(String userId) async {
+  DocumentSnapshot doc = await FirebaseFirestore.instance
+      .collection('Users')
+      .doc(userId)
+      .get();
+
+  return doc.data() as Map;
+}
+
+Widget postTemplate(BuildContext context, Map postData, DocumentReference? favorited, postId) {
     final postDate = postData['postDate'].toDate();
     final minutesPassed = DateTime.now().difference(postDate).inMinutes;
     Future<Map> userData = getUser(postData['authorID']);
@@ -181,7 +198,11 @@ class HomePageState extends State<HomePage> {
                   if (loadingProgress == null) {
                     return child;
                   }
-                  return Center(child: CircularProgressIndicator());
+                  return SizedBox(
+                    height: MediaQuery.sizeOf(context).width,
+                    width: MediaQuery.sizeOf(context).width,
+                    child: Center(child: CircularProgressIndicator())
+                  );
                 },
               )
               : Container(
@@ -200,27 +221,35 @@ class HomePageState extends State<HomePage> {
                 } else if (snapshot.hasError) {
                   return const Center(child: Text('Error loading data'));
                 } else if (snapshot.hasData) {
-                  return Row(
-                    spacing: 5,
-                    children: [
-                      snapshot.data!['profilePictureUrl'] != null
-                      ? CircleAvatar(
-                        backgroundImage: NetworkImage(snapshot.data!['profilePictureUrl']),
-                        radius: 15,
-                      )
-                      : Container(
-                        width: 30,
-                        height: 30,
-                        decoration: BoxDecoration(
-                          color: Colors.grey,
-                          borderRadius: BorderRadius.circular(20),
+                  return GestureDetector(
+                    onTap: (){
+                      Navigator.push(
+                        context,
+                        MaterialPageRoute(builder: (context) => ProfilePage(uid: postData['authorID'], userData: snapshot.data!))
+                      );
+                    },
+                    child: Row(
+                      spacing: 5,
+                      children: [
+                        snapshot.data!['profilePictureUrl'] != null
+                        ? CircleAvatar(
+                          backgroundImage: NetworkImage(snapshot.data!['profilePictureUrl']),
+                          radius: 15,
+                        )
+                        : Container(
+                          width: 30,
+                          height: 30,
+                          decoration: BoxDecoration(
+                            color: Colors.grey,
+                            borderRadius: BorderRadius.circular(20),
+                          ),
+                          child: Center(child: Icon(Icons.person)),
                         ),
-                        child: Center(child: Icon(Icons.person)),
-                      ),
-                      Text(
-                        snapshot.data!['displayName'],
-                      ),
-                    ],
+                        Text(
+                          snapshot.data!['displayName'],
+                        ),
+                      ],
+                    ),
                   );
                 } else {
                   return const Center(child: Text('No data available'));
@@ -370,13 +399,3 @@ class HomePageState extends State<HomePage> {
       ],
     );
   }
-}
-
-Future<Map> getUser(String userId) async {
-  DocumentSnapshot doc = await FirebaseFirestore.instance
-      .collection('Users')
-      .doc(userId)
-      .get();
-
-  return doc.data() as Map;
-}
