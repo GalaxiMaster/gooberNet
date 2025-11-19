@@ -1,3 +1,4 @@
+import 'package:cached_network_image/cached_network_image.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:flutter/material.dart';
 
@@ -11,7 +12,7 @@ class ProfilePage extends StatefulWidget {
 }
 
 class ProfilePageState extends State<ProfilePage> {
-  late final CollectionReference userPosts;
+  late final userPosts;
   final likes = FirebaseFirestore.instance.collection('Likes');
 
   @override
@@ -20,7 +21,8 @@ class ProfilePageState extends State<ProfilePage> {
     setUserCollection();
   }
   setUserCollection() async{
-    userPosts = FirebaseFirestore.instance.collection('Users').doc(widget.uid).collection('Posts');
+    userPosts = FirebaseFirestore.instance.collection('Users').doc(widget.uid).collection('Posts').orderBy('postDate', descending: true);
+
   }
   @override
   Widget build( context) {
@@ -85,9 +87,12 @@ class ProfilePageState extends State<ProfilePage> {
                         } else if (snapshot.hasData) {
                           final post = snapshot.data!.data();
                           
-                          return Image.network(
-                            'https://pub-b665727283304785a65fc86be829fa67.r2.dev/${post!['imageName']}',
+                          return CachedNetworkImage(
+                            imageUrl: 'https://pub-b665727283304785a65fc86be829fa67.r2.dev/${post!['imageName']}',
                             fit: BoxFit.cover,
+                            placeholder: (context, url) {
+                              return Center(child: CircularProgressIndicator());
+                            },
                           );
                         } else {
                           return const Center(child: Text('No data'));
@@ -98,7 +103,6 @@ class ProfilePageState extends State<ProfilePage> {
                 ),
               ],
             );
-
           } else if (snapshot.hasError) {
             return Text('Error: ${snapshot.error}');
           } else {

@@ -1,3 +1,4 @@
+import 'package:cached_network_image/cached_network_image.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:cloudflare_r2_uploader/cloudflare_r2_uploader.dart';
 import 'package:firebase_auth/firebase_auth.dart';
@@ -115,6 +116,18 @@ class HomePageState extends State<HomePage> {
                       final picker = ImagePicker();
                       final picked = await picker.pickImage(source: ImageSource.gallery);
                       if (picked == null) return;
+                      final fileSize = await picked.length(); // in bytes
+
+                      const maxSize = 5 * 1024 * 1024; // 5 MB limit
+
+                      if (fileSize > maxSize) {
+                        ScaffoldMessenger.of(context).showSnackBar(
+                          SnackBar(
+                            content: Text("File too large. Maximum allowed is 5MB."),
+                          ),
+                        );    
+                        return;                  
+                      }
 
                       final details = await Navigator.push(
                         // ignore: use_build_context_synchronously
@@ -147,15 +160,17 @@ class HomePageState extends State<HomePage> {
                           // });
                         },
                       );
-
+                      final now = DateTime.now();
                       DocumentReference docId = await FirebaseFirestore.instance.collection('Posts').add({
                         'authorID': FirebaseAuth.instance.currentUser!.uid,
-                        'postDate': DateTime.now(),
+                        'postDate': now,
                         'likeCount': 0,
                         'caption': details,
                         'imageName': uniqueName,
                       });
-                      await FirebaseFirestore.instance.collection('Users').doc(FirebaseAuth.instance.currentUser?.uid).collection('Posts').doc(docId.id).set({});
+                      await FirebaseFirestore.instance.collection('Users').doc(FirebaseAuth.instance.currentUser?.uid).collection('Posts').doc(docId.id).set({
+                        'postDate': now,
+                      });
                     },
                     child: Icon(Icons.add),
                   ),
@@ -189,15 +204,12 @@ Widget postTemplate(BuildContext context, Map postData, DocumentReference? favor
         Stack(
           children: [
             postData.containsKey('imageName') && postData['imageName'] != null
-              ? Image.network(
-                'https://pub-b665727283304785a65fc86be829fa67.r2.dev/${postData['imageName']}',
+              ? CachedNetworkImage(
+                imageUrl: 'https://pub-b665727283304785a65fc86be829fa67.r2.dev/${postData['imageName']}',
                 height: MediaQuery.sizeOf(context).width,
                 width: MediaQuery.sizeOf(context).width,
                 fit: BoxFit.cover,
-                loadingBuilder: (context, child, loadingProgress) {
-                  if (loadingProgress == null) {
-                    return child;
-                  }
+                placeholder: (context, url) {
                   return SizedBox(
                     height: MediaQuery.sizeOf(context).width,
                     width: MediaQuery.sizeOf(context).width,
