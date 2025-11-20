@@ -1,3 +1,6 @@
+import 'dart:async';
+import 'dart:ui';
+
 import 'package:cached_network_image/cached_network_image.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:cloudflare_r2_uploader/cloudflare_r2_uploader.dart';
@@ -10,6 +13,7 @@ import 'package:goober_net/settings.dart';
 import 'package:goober_net/sign_in_page.dart';
 import 'package:goober_net/upload_page.dart';
 import 'package:image_picker/image_picker.dart';
+import 'package:photo_view/photo_view.dart';
 
 void main() async{
   WidgetsFlutterBinding.ensureInitialized();
@@ -199,23 +203,57 @@ Widget postTemplate(BuildContext context, Map postData, DocumentReference? favor
     Future<Map> userData = getUser(postData['authorID']);
     final postRef = FirebaseFirestore.instance.collection('Posts').doc(postId.toString());
     final currentUid = FirebaseAuth.instance.currentUser?.uid;
+
+
+    likePost() async {
+      if (currentUid == null) {
+        // Not signed in: optionally navigate to sign-in
+        Navigator.pushNamed(context, '/SignIn');
+        return;
+      }
+
+      final likeDocRef = postRef.collection('Likes').doc(currentUid);
+
+      await FirebaseFirestore.instance.runTransaction((tx) async {
+        final likeSnapshot = await tx.get(likeDocRef);
+        if (likeSnapshot.exists) {
+          tx.delete(likeDocRef);
+          tx.update(postRef, {'likeCount': FieldValue.increment(-1)});
+        } else {
+          tx.set(likeDocRef, {
+            'createdAt': FieldValue.serverTimestamp(),
+            'displayName': FirebaseAuth.instance.currentUser?.displayName,
+            'photoUrl': FirebaseAuth.instance.currentUser?.photoURL,
+            'userId': currentUid,
+          });
+          tx.update(postRef, {'likeCount': FieldValue.increment(1)});
+        }
+      });
+    }
+
+
     return Column(
       children: [
         Stack(
           children: [
             postData.containsKey('imageName') && postData['imageName'] != null
-              ? CachedNetworkImage(
-                imageUrl: 'https://pub-b665727283304785a65fc86be829fa67.r2.dev/${postData['imageName']}',
-                height: MediaQuery.sizeOf(context).width,
-                width: MediaQuery.sizeOf(context).width,
-                fit: BoxFit.cover,
-                placeholder: (context, url) {
-                  return SizedBox(
-                    height: MediaQuery.sizeOf(context).width,
-                    width: MediaQuery.sizeOf(context).width,
-                    child: Center(child: CircularProgressIndicator())
-                  );
+              ? GestureDetector(
+                onLongPress: () {
+                  ImageOverlay.show(context, 'https://pub-b665727283304785a65fc86be829fa67.r2.dev/${postData['imageName']}');
                 },
+                onDoubleTap: ()=> likePost(),
+                child: CachedNetworkImage(
+                  imageUrl: 'https://pub-b665727283304785a65fc86be829fa67.r2.dev/${postData['imageName']}',
+                  width: MediaQuery.sizeOf(context).width,
+                  fit: BoxFit.cover,
+                  placeholder: (context, url) {
+                    return SizedBox(
+                      height: MediaQuery.sizeOf(context).width,
+                      width: MediaQuery.sizeOf(context).width,
+                      child: Center(child: CircularProgressIndicator())
+                    );
+                  },
+                ),
               )
               : Container(
                 height: MediaQuery.sizeOf(context).width,
@@ -245,7 +283,7 @@ Widget postTemplate(BuildContext context, Map postData, DocumentReference? favor
                       children: [
                         snapshot.data!['profilePictureUrl'] != null
                         ? CircleAvatar(
-                          backgroundImage: NetworkImage(snapshot.data!['profilePictureUrl']),
+                          backgroundImage: CachedNetworkImageProvider(snapshot.data!['profilePictureUrl']),
                           radius: 15,
                         )
                         : Container(
@@ -321,32 +359,7 @@ Widget postTemplate(BuildContext context, Map postData, DocumentReference? favor
                             );
 
                           },
-
-                          onTap: () async {
-                            if (currentUid == null) {
-                              // Not signed in: optionally navigate to sign-in
-                              Navigator.pushNamed(context, '/SignIn');
-                              return;
-                            }
-
-                            final likeDocRef = postRef.collection('Likes').doc(currentUid);
-
-                            await FirebaseFirestore.instance.runTransaction((tx) async {
-                              final likeSnapshot = await tx.get(likeDocRef);
-                              if (likeSnapshot.exists) {
-                                tx.delete(likeDocRef);
-                                tx.update(postRef, {'likeCount': FieldValue.increment(-1)});
-                              } else {
-                                tx.set(likeDocRef, {
-                                  'createdAt': FieldValue.serverTimestamp(),
-                                  'displayName': FirebaseAuth.instance.currentUser?.displayName,
-                                  'photoUrl': FirebaseAuth.instance.currentUser?.photoURL,
-                                  'userId': currentUid,
-                                });
-                                tx.update(postRef, {'likeCount': FieldValue.increment(1)});
-                              }
-                            });
-                          },
+                          onTap: ()=> likePost(),
                           child: Row(
                             spacing: 5,
                             children: [
@@ -411,3 +424,85 @@ Widget postTemplate(BuildContext context, Map postData, DocumentReference? favor
       ],
     );
   }
+
+class ImageOverlay {
+  static void show(BuildContext context, String imageUrl) {
+    late OverlayEntry overlay;
+
+    overlay = OverlayEntry(
+      builder: (context) {
+        return Stack(
+          children: [
+            Positioned.fill(
+              child: BackdropFilter(
+                filter: ImageFilter.blur(sigmaX: 10, sigmaY: 10),
+                child: Container(
+                  color: Colors.black.withOpacity(0.4),
+                ),
+              ),
+            ),
+            Center(
+              child: FutureBuilder<ImageInfo>(
+                future: _getImageInfo(imageUrl),
+                builder: (context, snapshot) {
+                  if (!snapshot.hasData) {
+                    return const CircularProgressIndicator();
+                  }
+
+                  final info = snapshot.data!;
+                  final imgWidth = info.image.width.toDouble();
+                  final imgHeight = info.image.height.toDouble();
+
+                  final screenWidth = MediaQuery.of(context).size.width;
+                  final maxWidth = screenWidth * 0.95;
+
+                  final scaleFactor = maxWidth / imgWidth;
+                  final displayHeight = imgHeight * scaleFactor;
+
+                  return SizedBox(
+                    width: maxWidth,
+                    height: displayHeight,
+                    child: PhotoView.customChild(
+                      minScale: PhotoViewComputedScale.contained,
+                      maxScale: PhotoViewComputedScale.covered * 4,
+                      backgroundDecoration: const BoxDecoration(color: Colors.transparent),
+                      child: ClipRRect(
+                        borderRadius: BorderRadius.circular(20),
+                        child: CachedNetworkImage(
+                          imageUrl: imageUrl,
+                          fit: BoxFit.cover,
+                        ),
+                      ),
+                    ),
+                  );
+                },
+              ),
+            ),
+            Positioned.fill(
+              child: GestureDetector(
+                behavior: HitTestBehavior.translucent,
+                onTap: () => overlay.remove(),
+              ),
+            ),
+          ],
+        );
+      },
+    );
+    Overlay.of(context, rootOverlay: true).insert(overlay);
+  }
+
+
+}  
+
+Future<ImageInfo> _getImageInfo(String url) async {
+  final completer = Completer<ImageInfo>();
+  final image = NetworkImage(url);
+
+  image.resolve(const ImageConfiguration()).addListener(
+    ImageStreamListener((ImageInfo info, _) {
+      completer.complete(info);
+    }),
+  );
+
+  return completer.future;
+}
