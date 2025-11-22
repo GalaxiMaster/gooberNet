@@ -110,7 +110,7 @@ class HomePageState extends State<HomePage> {
             body: Stack(
               children: [
                 ListView(
-                  children: docs.map((d) => postTemplate(context, d.data(), likes.doc(d.id), d.id)).toList(),
+                  children: docs.map((d) => PostTemplate(postData: d.data(), favorited: likes.doc(d.id), postId: d.id)).toList(),
                 ),
                 Positioned(
                   bottom: 20,
@@ -118,59 +118,67 @@ class HomePageState extends State<HomePage> {
                   child: FloatingActionButton(
                     onPressed: () async{
                       final picker = ImagePicker();
-                      final picked = await picker.pickImage(source: ImageSource.gallery);
-                      if (picked == null) return;
-                      final fileSize = await picked.length(); // in bytes
+                      final List<XFile> picked = await picker.pickMultiImage();
+                      if (picked.isEmpty) return;
+                      for (XFile image in picked){
+                        final fileSize = await image.length(); // in bytes
 
-                      const maxSize = 5 * 1024 * 1024; // 5 MB limit
+                        const maxSize = 5 * 1024 * 1024; // 5 MB limit
 
-                      if (fileSize > maxSize) {
-                        ScaffoldMessenger.of(context).showSnackBar(
-                          SnackBar(
-                            content: Text("File too large. Maximum allowed is 5MB."),
-                          ),
-                        );    
-                        return;                  
+                        if (fileSize > maxSize) {
+                          if (mounted){
+                            ScaffoldMessenger.of(context).showSnackBar(
+                              SnackBar(
+                                content: Text("File too large. Maximum allowed is 5MB."),
+                              ),
+                            );    
+                          }
+                          return;                  
+                        }
                       }
+
 
                       final details = await Navigator.push(
                         // ignore: use_build_context_synchronously
                         context,
-                        MaterialPageRoute(builder: (context) => UploadPage(imagePath: picked.path)),
+                        MaterialPageRoute(builder: (context) => UploadPage(imagePath: picked.map((p)=>p.path).toList())),
                       );
                       if (details == null) return;
+                      List<String> imageUIDs = [];
+                      for (XFile image in picked){
+                        final bytes = await image.readAsBytes();
+                        final uploader = CloudflareR2Uploader(
+                          accountId: dotenv.get('accountId'), 
+                          accessKeyId: dotenv.get('accessKeyId'), 
+                          secretAccessKey: dotenv.get('secretAccessKey'), 
+                          bucketName: 'images'
+                        );
 
-                      final bytes = await picked.readAsBytes();
-                      final uploader = CloudflareR2Uploader(
-                        accountId: dotenv.get('accountId'), 
-                        accessKeyId: dotenv.get('accessKeyId'), 
-                        secretAccessKey: dotenv.get('secretAccessKey'), 
-                        bucketName: 'images'
-                      );
+                        // Build a unique filename to avoid collisions in the bucket/DB.
+                        final originalName = image.name;
+                        final dotIndex = originalName.lastIndexOf('.');
+                        final extension = dotIndex != -1 ? originalName.substring(dotIndex) : '';
+                        final uniqueName = '${DateTime.now().millisecondsSinceEpoch}_${FirebaseAuth.instance.currentUser?.uid ?? 'anon'}$extension';
+                        imageUIDs.add(uniqueName);
+                        // Upload and capture the returned URL so we can store it in Firestore.
+                        await uploader.uploadFile(
+                          fileBytes: bytes,
+                          fileName: uniqueName,
+                          onProgress: (progress) {
+                            // setState(() {
+                            //   _progress = progress;
+                            // });
+                          },
+                        );
+                      }
 
-                      // Build a unique filename to avoid collisions in the bucket/DB.
-                      final originalName = picked.name;
-                      final dotIndex = originalName.lastIndexOf('.');
-                      final extension = dotIndex != -1 ? originalName.substring(dotIndex) : '';
-                      final uniqueName = '${DateTime.now().millisecondsSinceEpoch}_${FirebaseAuth.instance.currentUser?.uid ?? 'anon'}$extension';
-
-                      // Upload and capture the returned URL so we can store it in Firestore.
-                      await uploader.uploadFile( // ! TODO DEAL WITH BIG FILES
-                        fileBytes: bytes,
-                        fileName: uniqueName,
-                        onProgress: (progress) {
-                          // setState(() {
-                          //   _progress = progress;
-                          // });
-                        },
-                      );
                       final now = DateTime.now();
                       DocumentReference docId = await FirebaseFirestore.instance.collection('Posts').add({
                         'authorID': FirebaseAuth.instance.currentUser!.uid,
                         'postDate': now,
                         'likeCount': 0,
                         'caption': details,
-                        'imageName': uniqueName,
+                        'imageName': imageUIDs,
                       });
                       await FirebaseFirestore.instance.collection('Users').doc(FirebaseAuth.instance.currentUser?.uid).collection('Posts').doc(docId.id).set({
                         'postDate': now,
@@ -197,118 +205,194 @@ Future<Map> getUser(String userId) async {
   return doc.data() as Map;
 }
 
-Widget postTemplate(BuildContext context, Map postData, DocumentReference? favorited, postId) {
-    final postDate = postData['postDate'].toDate();
-    final minutesPassed = DateTime.now().difference(postDate).inMinutes;
-    Future<Map> userData = getUser(postData['authorID']);
-    final postRef = FirebaseFirestore.instance.collection('Posts').doc(postId.toString());
-    final currentUid = FirebaseAuth.instance.currentUser?.uid;
+class PostTemplate extends StatefulWidget {
+  final Map postData;
+  final DocumentReference? favorited;
+  final String postId;
 
+  const PostTemplate({
+    super.key,
+    required this.postData,
+    required this.favorited,
+    required this.postId,
+  });
 
-    likePost() async {
-      if (currentUid == null) {
-        // Not signed in: optionally navigate to sign-in
-        Navigator.pushNamed(context, '/SignIn');
-        return;
-      }
+  @override
+  State<PostTemplate> createState() => _PostTemplateState();
+}
 
-      final likeDocRef = postRef.collection('Likes').doc(currentUid);
+class _PostTemplateState extends State<PostTemplate> {
+  int _currentPage = 0;
+  final PageController _pageController = PageController();
 
-      await FirebaseFirestore.instance.runTransaction((tx) async {
-        final likeSnapshot = await tx.get(likeDocRef);
-        if (likeSnapshot.exists) {
-          tx.delete(likeDocRef);
-          tx.update(postRef, {'likeCount': FieldValue.increment(-1)});
-        } else {
-          tx.set(likeDocRef, {
-            'createdAt': FieldValue.serverTimestamp(),
-            'displayName': FirebaseAuth.instance.currentUser?.displayName,
-            'photoUrl': FirebaseAuth.instance.currentUser?.photoURL,
-            'userId': currentUid,
-          });
-          tx.update(postRef, {'likeCount': FieldValue.increment(1)});
-        }
-      });
+  late Future<Map> userData;
+  late DocumentReference postRef;
+  late String? currentUid;
+
+  @override
+  void initState() {
+    super.initState();
+
+    userData = getUser(widget.postData['authorID']);
+    postRef = FirebaseFirestore.instance
+        .collection('Posts')
+        .doc(widget.postId);
+    currentUid = FirebaseAuth.instance.currentUser?.uid;
+  }
+
+  @override
+  void dispose() {
+    _pageController.dispose();
+    super.dispose();
+  }
+
+  Future<void> likePost() async {
+    if (currentUid == null) {
+      Navigator.pushNamed(context, '/SignIn');
+      return;
     }
 
+    final likeDocRef = postRef.collection('Likes').doc(currentUid);
+
+    await FirebaseFirestore.instance.runTransaction((tx) async {
+      final likeSnapshot = await tx.get(likeDocRef);
+      if (likeSnapshot.exists) {
+        tx.delete(likeDocRef);
+        tx.update(postRef, {'likeCount': FieldValue.increment(-1)});
+      } else {
+        tx.set(likeDocRef, {
+          'createdAt': FieldValue.serverTimestamp(),
+          'displayName': FirebaseAuth.instance.currentUser?.displayName,
+          'photoUrl': FirebaseAuth.instance.currentUser?.photoURL,
+          'userId': currentUid,
+        });
+        tx.update(postRef, {'likeCount': FieldValue.increment(1)});
+      }
+    });
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final postData = widget.postData;
+
+    final postDate = postData['postDate'].toDate();
+    final minutesPassed = DateTime.now().difference(postDate).inMinutes;
 
     return Column(
       children: [
         Stack(
           children: [
             postData.containsKey('imageName') && postData['imageName'] != null
-              ? GestureDetector(
-                onLongPress: () {
-                  ImageOverlay.show(context, 'https://pub-b665727283304785a65fc86be829fa67.r2.dev/${postData['imageName']}');
-                },
-                onDoubleTap: ()=> likePost(),
-                child: CachedNetworkImage(
-                  imageUrl: 'https://pub-b665727283304785a65fc86be829fa67.r2.dev/${postData['imageName']}',
-                  width: MediaQuery.sizeOf(context).width,
-                  fit: BoxFit.cover,
-                  placeholder: (context, url) {
-                    return SizedBox(
-                      height: MediaQuery.sizeOf(context).width,
-                      width: MediaQuery.sizeOf(context).width,
-                      child: Center(child: CircularProgressIndicator())
-                    );
-                  },
-                ),
-              )
-              : Container(
-                height: MediaQuery.sizeOf(context).width,
-                width: MediaQuery.sizeOf(context).width,
-                color: Colors.grey.shade700,
-              ),
+                ? SizedBox(
+                    height: MediaQuery.sizeOf(context).width, // ! Default to square since image dimensions are unknown
+                    child: PageView.builder(
+                      controller: _pageController,
+                      itemCount: postData['imageName'].length,
+                      itemBuilder: (context, index) {
+                        return GestureDetector(
+                          onLongPress: () {
+                            ImageOverlay.show(
+                              context,
+                              'https://pub-b665727283304785a65fc86be829fa67.r2.dev/${postData['imageName'][index]}',
+                            );
+                          },
+                          onDoubleTap: () => likePost(),
+                          child: Center(
+                            child: CachedNetworkImage(
+                              imageUrl: 'https://pub-b665727283304785a65fc86be829fa67.r2.dev/${postData['imageName'][index]}',
+                              width: MediaQuery.sizeOf(context).width,
+                              fit: BoxFit.cover,   // <-- important
+                              placeholder: (_, __) => Center(child: CircularProgressIndicator()),
+                            ),
+                          )
+                        );
+                      },
+                      onPageChanged: (newPage) {
+                        setState(() => _currentPage = newPage);
+                      },
+                    ),
+                  )
+                : Container(
+                    height: MediaQuery.sizeOf(context).width,
+                    width: MediaQuery.sizeOf(context).width,
+                    color: Colors.grey.shade700,
+                  ),
+
             Positioned(
               top: 5,
               left: 5,
               child: FutureBuilder(
-              future: userData,
-              builder: (context, snapshot) {
-                if (snapshot.connectionState == ConnectionState.waiting) {
-                  return const Center(child: CircularProgressIndicator());
-                } else if (snapshot.hasError) {
-                  return const Center(child: Text('Error loading data'));
-                } else if (snapshot.hasData) {
+                future: userData,
+                builder: (context, snapshot) {
+                  if (snapshot.connectionState == ConnectionState.waiting) {
+                    return const CircularProgressIndicator();
+                  } else if (snapshot.hasError) {
+                    return const Text('Error');
+                  } else if (!snapshot.hasData) {
+                    return const Text('No data');
+                  }
+
+                  final data = snapshot.data!;
+
                   return GestureDetector(
-                    onTap: (){
+                    onTap: () {
                       Navigator.push(
                         context,
-                        MaterialPageRoute(builder: (context) => ProfilePage(uid: postData['authorID'], userData: snapshot.data!))
+                        MaterialPageRoute(
+                          builder: (_) => ProfilePage(
+                            uid: postData['authorID'],
+                            userData: data,
+                          ),
+                        ),
                       );
                     },
                     child: Row(
                       spacing: 5,
                       children: [
-                        snapshot.data!['profilePictureUrl'] != null
-                        ? CircleAvatar(
-                          backgroundImage: CachedNetworkImageProvider(snapshot.data!['profilePictureUrl']),
-                          radius: 15,
-                        )
-                        : Container(
-                          width: 30,
-                          height: 30,
-                          decoration: BoxDecoration(
-                            color: Colors.grey,
-                            borderRadius: BorderRadius.circular(20),
-                          ),
-                          child: Center(child: Icon(Icons.person)),
-                        ),
-                        Text(
-                          snapshot.data!['displayName'],
-                        ),
+                        data['profilePictureUrl'] != null
+                            ? CircleAvatar(
+                                backgroundImage: CachedNetworkImageProvider(
+                                  data['profilePictureUrl'],
+                                ),
+                                radius: 15,
+                              )
+                            : const CircleAvatar(
+                                radius: 15,
+                                child: Icon(Icons.person),
+                              ),
+                        Text(data['displayName']),
                       ],
                     ),
                   );
-                } else {
-                  return const Center(child: Text('No data available'));
-                }
-              },
+                },
               ),
             ),
+
+            if (postData['imageName'].length > 1)
+              Positioned(
+                bottom: 10,
+                left: 0,
+                right: 0,
+                child: Row(
+                  mainAxisAlignment: MainAxisAlignment.center,
+                  children: List.generate(
+                    postData['imageName'].length,
+                    (index) => Padding(
+                      padding: const EdgeInsets.symmetric(horizontal: 3),
+                      child: Icon(
+                        _currentPage == index
+                            ? Icons.circle
+                            : Icons.circle_outlined,
+                        color: Colors.grey.shade200,
+                        size: 12,
+                      ),
+                    ),
+                  ),
+                ),
+              ),
           ],
         ),
+
         Container(
           padding: const EdgeInsets.symmetric(horizontal: 15, vertical: 8),
           child: Column(
@@ -316,100 +400,111 @@ Widget postTemplate(BuildContext context, Map postData, DocumentReference? favor
               Row(
                 spacing: 20,
                 children: [
-                  SizedBox(
-                    child: StreamBuilder<DocumentSnapshot>(
-                      stream: currentUid == null ? const Stream.empty() : postRef.collection('Likes').doc(currentUid).snapshots(),
-                      builder: (context, likeSnap) {
-                        final hasLiked = likeSnap.hasData && likeSnap.data!.exists;
-                        final likeCount = (postData['likeCount'] ?? 0) as int;
-                        return GestureDetector(
-                          onLongPress: () {
-                            showModalBottomSheet(
-                              context: context,
-                              builder: (ctx) {
-                                return FutureBuilder<QuerySnapshot>(
-                                  future: postRef.collection('Likes').orderBy('createdAt', descending: true).limit(50).get(),
-                                  builder: (context, likesSnap) {
-                                    if (likesSnap.connectionState == ConnectionState.waiting) {
-                                      return SizedBox(height: 200, child: Center(child: CircularProgressIndicator()));
-                                    }
-                                    if (!likesSnap.hasData || likesSnap.data!.docs.isEmpty) {
-                                      return SizedBox(height: 200, child: Center(child: Text('No likes yet')));
-                                    }
-                                    final likeDocs = likesSnap.data!.docs;
-                                    return SizedBox(
-                                      height: 300,
-                                      child: ListView(
-                                        children: likeDocs.map((d) {
-                                          final data = d.data() as Map<String, dynamic>;
-                                          final name = data['displayName'] ?? data['userId'] ?? 'User';
-                                          final photo = data['photoUrl'] as String?;
-                                          return ListTile(
-                                            leading: photo != null
-                                              ? CircleAvatar(backgroundImage: NetworkImage(photo))
-                                              : CircleAvatar(child: Icon(Icons.person)),
-                                            title: Text(name),
-                                          );
-                                        }).toList(),
-                                      ),
-                                    );
-                                  },
-                                );
-                              },
-                            );
+                  StreamBuilder<DocumentSnapshot>(
+                    stream: currentUid == null
+                        ? const Stream.empty()
+                        : postRef.collection('Likes').doc(currentUid).snapshots(),
+                    builder: (context, snap) {
+                      final hasLiked = snap.hasData && snap.data!.exists;
 
-                          },
-                          onTap: ()=> likePost(),
-                          child: Row(
-                            spacing: 5,
-                            children: [
-                              Icon(hasLiked ? Icons.favorite : Icons.favorite_border),
-                              Text('$likeCount')
-                            ],
-                          ),
-                        );
-                      },
-                    ),
+                      final likeCount = (postData['likeCount'] ?? 0) as int;
+
+                      return GestureDetector(
+                        onLongPress: () {
+                          showModalBottomSheet(
+                            context: context,
+                            builder: (ctx) {
+                              return FutureBuilder<QuerySnapshot>(
+                                future: postRef.collection('Likes').orderBy('createdAt', descending: true).limit(50).get(),
+                                builder: (context, likesSnap) {
+                                  if (!likesSnap.hasData) {
+                                    return const SizedBox(
+                                      height: 200,
+                                      child: Center(
+                                          child: CircularProgressIndicator()),
+                                    );
+                                  }
+
+                                  final docs = likesSnap.data!.docs;
+
+                                  if (docs.isEmpty) {
+                                    return const SizedBox(
+                                      height: 200,
+                                      child: Center(
+                                          child: Text('No likes yet')),
+                                    );
+                                  }
+
+                                  return SizedBox(
+                                    height: 300,
+                                    child: ListView(
+                                      children: docs.map((d) {
+                                        final data = d.data() as Map<String, dynamic>;
+                                        return ListTile(
+                                          leading: data['photoUrl'] != null
+                                              ? CircleAvatar(
+                                                  backgroundImage: NetworkImage(data['photoUrl']),
+                                                )
+                                              : const CircleAvatar(
+                                                  child: Icon(Icons.person),
+                                                ),
+                                          title: Text(
+                                            data['displayName'] ?? data['userId'] ?? 'User',
+                                          ),
+                                        );
+                                      }).toList(),
+                                    ),
+                                  );
+                                },
+                              );
+                            },
+                          );
+                        },
+                        onTap: () => likePost(),
+                        child: Row(
+                          spacing: 5,
+                          children: [
+                            Icon(hasLiked
+                                ? Icons.favorite
+                                : Icons.favorite_border
+                              ),
+                            Text('$likeCount'),
+                          ],
+                        ),
+                      );
+                    },
                   ),
-                  SizedBox(
-                    child: Row(
-                      spacing: 5,
-                      children: [
-                        Icon(Icons.comment_outlined),
-                        Text('0')
-                      ],
-                    )
+
+                  Row(
+                    spacing: 5,
+                    children: const [
+                      Icon(Icons.comment_outlined),
+                      Text('0'),
+                    ],
                   ),
-                  SizedBox(
-                    child: Row(
-                      spacing: 5,
-                      children: [
-                        Icon(Icons.send_outlined),
-                        Text('2')
-                      ],
-                    )
-                  )
                 ],
               ),
+
+              // CAPTION
               Align(
-                alignment: Alignment.bottomLeft,
+                alignment: Alignment.centerLeft,
                 child: Padding(
                   padding: const EdgeInsets.symmetric(vertical: 2, horizontal: 3),
-                  child: Text(
-                    postData['caption'],
-                  ),
+                  child: Text(postData['caption']),
                 ),
               ),
+
               Align(
-                alignment: Alignment.bottomLeft,
+                alignment: Alignment.centerLeft,
                 child: Padding(
-                  padding: const EdgeInsets.symmetric(vertical: 2, horizontal: 3),
+                  padding:
+                      const EdgeInsets.symmetric(vertical: 2, horizontal: 3),
                   child: Text(
-                    (minutesPassed~/60) ~/ 24 > 0
-                      ? '${minutesPassed~/60 ~/ 24} days ago'
-                      : minutesPassed~/60 >= 1
-                        ? '${minutesPassed~/60} hours ago'
-                        : '$minutesPassed minutes ago',
+                    minutesPassed ~/ 1440 > 0
+                        ? '${minutesPassed ~/ 1440} days ago'
+                        : minutesPassed ~/ 60 >= 1
+                            ? '${minutesPassed ~/ 60} hours ago'
+                            : '$minutesPassed minutes ago',
                     style: TextStyle(
                       color: Colors.grey.shade600,
                       fontSize: 12,
@@ -424,6 +519,8 @@ Widget postTemplate(BuildContext context, Map postData, DocumentReference? favor
       ],
     );
   }
+}
+
 
 class ImageOverlay {
   static void show(BuildContext context, String imageUrl) {
