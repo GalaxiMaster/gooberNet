@@ -237,16 +237,25 @@ class _PostTemplateState extends State<PostTemplate> {
   late Map postData;
   late Future<Map> future = checkImageData();
 
+  late int likeCount;
+  late bool hasLiked = false;
+
   @override
   void initState() {
     super.initState();
 
     userData = getUser(widget.postData['authorID']);
-    postRef = FirebaseFirestore.instance
-        .collection('Posts')
-        .doc(widget.postId);
+    postRef = FirebaseFirestore.instance.collection('Posts').doc(widget.postId);
     currentUid = FirebaseAuth.instance.currentUser?.uid;
     postData = widget.postData;
+    likeCount = (postData['likeCount'] ?? 0) as int;
+    _loadInitialLike();
+  }
+
+  Future<void> _loadInitialLike() async {
+    final doc = await postRef.collection('Likes').doc(currentUid).get();
+    if (!mounted) return;
+    setState(() => hasLiked = doc.exists);
   }
 
   @override
@@ -260,7 +269,10 @@ class _PostTemplateState extends State<PostTemplate> {
       Navigator.pushNamed(context, '/SignIn');
       return;
     }
-
+    setState(() {
+      hasLiked = !hasLiked;
+      likeCount += hasLiked ? 1 : -1;
+    });
     final likeDocRef = postRef.collection('Likes').doc(currentUid);
 
     await FirebaseFirestore.instance.runTransaction((tx) async {
@@ -446,79 +458,67 @@ class _PostTemplateState extends State<PostTemplate> {
               Row(
                 spacing: 20,
                 children: [
-                  StreamBuilder<DocumentSnapshot>(
-                    stream: currentUid == null
-                        ? const Stream.empty()
-                        : postRef.collection('Likes').doc(currentUid).snapshots(),
-                    builder: (context, snap) {
-                      final hasLiked = snap.hasData && snap.data!.exists;
+                  GestureDetector(
+                    onLongPress: () {
+                      showModalBottomSheet(
+                        context: context,
+                        builder: (ctx) {
+                          return FutureBuilder<QuerySnapshot>(
+                            future: postRef.collection('Likes').orderBy('createdAt', descending: true).limit(50).get(),
+                            builder: (context, likesSnap) {
+                              if (!likesSnap.hasData) {
+                                return const SizedBox(
+                                  height: 200,
+                                  child: Center(child: CircularProgressIndicator()),
+                                );
+                              }
 
-                      final likeCount = (postData['likeCount'] ?? 0) as int;
+                              final docs = likesSnap.data!.docs;
 
-                      return GestureDetector(
-                        onLongPress: () {
-                          showModalBottomSheet(
-                            context: context,
-                            builder: (ctx) {
-                              return FutureBuilder<QuerySnapshot>(
-                                future: postRef.collection('Likes').orderBy('createdAt', descending: true).limit(50).get(),
-                                builder: (context, likesSnap) {
-                                  if (!likesSnap.hasData) {
-                                    return const SizedBox(
-                                      height: 200,
-                                      child: Center(
-                                          child: CircularProgressIndicator()),
+                              if (docs.isEmpty) {
+                                return const SizedBox(
+                                  height: 200,
+                                  child: Center(
+                                      child: Text('No likes yet')),
+                                );
+                              }
+
+                              return SizedBox(
+                                height: 300,
+                                child: ListView(
+                                  children: docs.map((d) {
+                                    final data = d.data() as Map<String, dynamic>;
+                                    return ListTile(
+                                      leading: data['photoUrl'] != null
+                                          ? CircleAvatar(
+                                              backgroundImage: NetworkImage(data['photoUrl']),
+                                            )
+                                          : const CircleAvatar(
+                                              child: Icon(Icons.person),
+                                            ),
+                                      title: Text(
+                                        data['displayName'] ?? data['userId'] ?? 'User',
+                                      ),
                                     );
-                                  }
-
-                                  final docs = likesSnap.data!.docs;
-
-                                  if (docs.isEmpty) {
-                                    return const SizedBox(
-                                      height: 200,
-                                      child: Center(
-                                          child: Text('No likes yet')),
-                                    );
-                                  }
-
-                                  return SizedBox(
-                                    height: 300,
-                                    child: ListView(
-                                      children: docs.map((d) {
-                                        final data = d.data() as Map<String, dynamic>;
-                                        return ListTile(
-                                          leading: data['photoUrl'] != null
-                                              ? CircleAvatar(
-                                                  backgroundImage: NetworkImage(data['photoUrl']),
-                                                )
-                                              : const CircleAvatar(
-                                                  child: Icon(Icons.person),
-                                                ),
-                                          title: Text(
-                                            data['displayName'] ?? data['userId'] ?? 'User',
-                                          ),
-                                        );
-                                      }).toList(),
-                                    ),
-                                  );
-                                },
+                                  }).toList(),
+                                ),
                               );
                             },
                           );
                         },
-                        onTap: () => likePost(),
-                        child: Row(
-                          spacing: 5,
-                          children: [
-                            Icon(hasLiked
-                                ? Icons.favorite
-                                : Icons.favorite_border
-                              ),
-                            Text('$likeCount'),
-                          ],
-                        ),
                       );
                     },
+                    onTap: () => likePost(),
+                    child: Row(
+                      spacing: 5,
+                      children: [
+                        Icon(hasLiked
+                            ? Icons.favorite
+                            : Icons.favorite_border
+                          ),
+                        Text('$likeCount'),
+                      ],
+                    ),
                   ),
 
                   Row(
