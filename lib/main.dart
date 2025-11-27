@@ -1,9 +1,9 @@
 import 'dart:async';
 import 'dart:ui';
 import 'dart:ui' as ui;
-
 import 'package:cached_network_image/cached_network_image.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
+import 'package:cloudflare_r2/cloudflare_r2.dart';
 import 'package:cloudflare_r2_uploader/cloudflare_r2_uploader.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:firebase_core/firebase_core.dart';
@@ -20,7 +20,11 @@ void main() async{
   WidgetsFlutterBinding.ensureInitialized();
   await Firebase.initializeApp();
   await dotenv.load();
-
+  await CloudFlareR2.init(
+    accountId: dotenv.get('accountId'),
+    accessKeyId: dotenv.get('accessKeyId'),
+    secretAccessKey: dotenv.get('secretAccessKey'),
+  );
   runApp(const MyApp());
 }
 
@@ -404,22 +408,90 @@ class _PostTemplateState extends State<PostTemplate> {
                         ),
                       );
                     },
-                    child: Row(
-                      spacing: 5,
-                      children: [
-                        data['profilePictureUrl'] != null
-                            ? CircleAvatar(
-                                backgroundImage: CachedNetworkImageProvider(
-                                  data['profilePictureUrl'],
+                    child: SizedBox(
+                      width: MediaQuery.sizeOf(context).width,
+                      child: Row(
+                        spacing: 5,
+                        children: [
+                          data['profilePictureUrl'] != null
+                              ? CircleAvatar(
+                                  backgroundImage: CachedNetworkImageProvider(
+                                    data['profilePictureUrl'],
+                                  ),
+                                  radius: 15,
+                                )
+                              : const CircleAvatar(
+                                  radius: 15,
+                                  child: Icon(Icons.person),
                                 ),
-                                radius: 15,
-                              )
-                            : const CircleAvatar(
-                                radius: 15,
-                                child: Icon(Icons.person),
+                          Text(data['displayName']),
+                          Spacer(),
+                          if (currentUid == postData['authorID'])
+                          GestureDetector(
+                            onTap: (){
+                              showModalBottomSheet(
+                                context: context,
+                                builder: (ctx) {
+                                  return Padding(
+                                    padding: const EdgeInsets.all(8.0),
+                                    child: Column(
+                                      mainAxisSize: MainAxisSize.min,
+                                      children: [
+                                        ListTile(
+                                          leading: Icon(Icons.delete),
+                                          title: Text('Delete Post'),
+                                          onTap: () async {
+                                            final bool? res = await showDialog(
+                                              context: context, 
+                                              builder: (context){
+                                                return AlertDialog(
+                                                  title: Text('Confirm Deletion'),
+                                                  content: Text('Are you sure you want to delete this post? This action cannot be undone.'),
+                                                  actions: [
+                                                    TextButton(
+                                                      onPressed: (){
+                                                        Navigator.pop(context, false);
+                                                      }, 
+                                                      child: Text('Cancel')
+                                                    ),
+                                                    TextButton(
+                                                      onPressed: (){
+                                                        Navigator.pop(context, true);
+                                                      }, 
+                                                      child: Text('Delete', style: TextStyle(color: Colors.red),)
+                                                    ),
+                                                  ],
+                                                );
+                                              }
+                                            );
+                                            if (res != true) return;
+                                            if (!ctx.mounted) return;
+                                            Navigator.pop(ctx);
+                                            for (var image in postData['imageDetails']){
+                                              await CloudFlareR2.deleteObject(
+                                                bucket: 'images',
+                                                objectName: image['imageId'],
+                                              );
+                                            }
+                                            await FirebaseFirestore.instance.collection('Posts').doc(widget.postId).delete();
+                                            await FirebaseFirestore.instance.collection('Users').doc(currentUid).collection('Posts').doc(widget.postId).delete();
+                                          },
+                                        ),
+                                      ],
+                                    ),
+                                  );
+                                },
+                              );
+                            },
+                            child: Padding(
+                              padding: const EdgeInsets.all(8.0),
+                              child: Icon(
+                                Icons.more_vert,
                               ),
-                        Text(data['displayName']),
-                      ],
+                            ),
+                          )
+                        ],
+                      ),
                     ),
                   );
                 },

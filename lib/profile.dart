@@ -22,7 +22,6 @@ class ProfilePageState extends State<ProfilePage> {
   }
   setUserCollection() async{
     userPosts = FirebaseFirestore.instance.collection('Users').doc(widget.uid).collection('Posts').orderBy('postDate', descending: true);
-
   }
   @override
   Widget build( context) {
@@ -88,7 +87,7 @@ class ProfilePageState extends State<ProfilePage> {
                           final post = snapshot.data!.data();
                           
                           return CachedNetworkImage(
-                            imageUrl: 'https://pub-b665727283304785a65fc86be829fa67.r2.dev/${post!['imageName']}',
+                            imageUrl: 'https://pub-b665727283304785a65fc86be829fa67.r2.dev/${post!['imageDetails'][0]['imageId']}',
                             fit: BoxFit.cover,
                             placeholder: (context, url) {
                               return Center(child: CircularProgressIndicator());
