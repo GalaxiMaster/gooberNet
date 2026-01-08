@@ -78,130 +78,273 @@ class HomePage extends StatefulWidget {
 }
 
 class HomePageState extends State<HomePage> {
-  final users = FirebaseFirestore.instance.collection('Posts').orderBy('postDate', descending: true);
+  int selectedPageIndex = 1;
+  final posts = FirebaseFirestore.instance.collection('Posts').orderBy('postDate', descending: true); 
   final likes = FirebaseFirestore.instance.collection('Likes');
+  final _pages = [    
+    HomeFeedPage(),    
+    ChallengesPage(),
+  ];
 
-  @override
-  void initState() {
-    super.initState();
-
-  }
-  void fetchPostContent() async {
-    
-  }
   @override
   Widget build(BuildContext context) {
+    return Scaffold(
+      appBar: _buildAppBar(),
+      bottomNavigationBar: BottomNavigationBar(
+        currentIndex: selectedPageIndex,
+        onTap: (i) => setState(() => selectedPageIndex = i),
+        showSelectedLabels: false,
+        showUnselectedLabels: false,
+        items: const [
+          BottomNavigationBarItem(
+            icon: Icon(Icons.home_outlined),
+            activeIcon: Icon(Icons.home),
+            label: 'Home',
+          ),
+          BottomNavigationBarItem(
+            icon: Icon(Icons.access_time_outlined),
+            activeIcon: Icon(Icons.access_time),
+            label: 'Challenges',
+          ),
+        ],
+      ),
+      body: IndexedStack(
+        index: selectedPageIndex,
+        children: _pages,
+      ),
+      floatingActionButton: selectedPageIndex == 0 ? createPostFab() : null,
+    );
+  }
+
+  PreferredSizeWidget _buildAppBar() {
+    switch (selectedPageIndex) {
+      case 0:
+        return AppBar(
+          title: const Text('Thingy'),
+          actions: [
+            IconButton(
+              icon: const Icon(Icons.settings),
+              onPressed: () => Navigator.push(
+                context,
+                MaterialPageRoute(builder: (_) => SettingsPage()),
+              ),
+            ),
+          ],
+        );
+      case 1:
+        return AppBar(
+          title: Text('Active Challenges'),
+          centerTitle: true,
+        );
+      default:
+        return AppBar();
+    }
+  }
+  
+  Widget createPostFab() {
+    return Positioned(
+      bottom: 20,
+      right: 20,
+      child: FloatingActionButton(
+        onPressed: () async{
+          final picker = ImagePicker();
+          final List<XFile> picked = await picker.pickMultiImage();
+          if (picked.isEmpty) return;
+          for (XFile image in picked){
+            final fileSize = await image.length(); // in bytes
+
+            const maxSize = 5 * 1024 * 1024; // 5 MB limit
+
+            if (fileSize > maxSize) {
+              if (context.mounted){
+                ScaffoldMessenger.of(context).showSnackBar(
+                  SnackBar(
+                    content: Text("File too large. Maximum allowed is 5MB."),
+                  ),
+                );    
+              }
+              return;                  
+            }
+          }
+
+
+          final details = await Navigator.push(
+            // ignore: use_build_context_synchronously
+            context,
+            MaterialPageRoute(builder: (context) => UploadPage(imagePath: picked.map((p)=>p.path).toList())),
+          );
+          if (details == null) return;
+          List<Map> imageUIDs = [];
+          for (XFile image in picked){
+            final bytes = await image.readAsBytes();
+            final uploader = CloudflareR2Uploader(
+              accountId: dotenv.get('accountId'), 
+              accessKeyId: dotenv.get('accessKeyId'), 
+              secretAccessKey: dotenv.get('secretAccessKey'), 
+              bucketName: 'images'
+            );
+            // Build a unique filename to avoid collisions in the bucket/DB.
+            final originalName = image.name;
+            final dotIndex = originalName.lastIndexOf('.');
+            final extension = dotIndex != -1 ? originalName.substring(dotIndex) : '';
+            final uniqueName = '${DateTime.now().millisecondsSinceEpoch}_${FirebaseAuth.instance.currentUser?.uid ?? 'anon'}$extension';
+            Map imageSize = await getImageSize(image);
+            imageUIDs.add({
+              'imageId': uniqueName,
+              'width': imageSize['width'],
+              'height': imageSize['height'],
+            });
+            // Upload and capture the returned URL so we can store it in Firestore.
+            await uploader.uploadFile(
+              fileBytes: bytes,
+              fileName: uniqueName,
+              onProgress: (progress) {
+                // setState(() {
+                //   _progress = progress;
+                // });
+              },
+            );
+          }
+
+          final now = DateTime.now();
+          DocumentReference docId = await FirebaseFirestore.instance.collection('Posts').add({
+            'authorID': FirebaseAuth.instance.currentUser!.uid,
+            'postDate': now,
+            'likeCount': 0,
+            'caption': details,
+            'imageDetails': imageUIDs,
+          });
+          await FirebaseFirestore.instance.collection('Users').doc(FirebaseAuth.instance.currentUser?.uid).collection('Posts').doc(docId.id).set({
+            'postDate': now,
+          });
+        },
+        child: Icon(Icons.add),
+      ),
+    );
+  }
+}
+
+
+class ChallengesPage extends StatelessWidget{
+  const ChallengesPage({super.key});
+
+  @override
+  Widget build(BuildContext context) {
+    return Padding(
+      padding: const EdgeInsets.all(8.0),
+      child: ListView.builder(
+        itemCount: 1,
+        itemBuilder: (BuildContext context, int index) { 
+          return Card(
+            color: Colors.grey.withValues(alpha: 0.2),
+            child: Padding(
+              padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
+              child: Column(
+                children: [
+                  Row(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                    children: [
+                      Expanded(
+                        child: Column(
+                          mainAxisAlignment: MainAxisAlignment.start,
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            Container(
+                              decoration: BoxDecoration(
+                                borderRadius: BorderRadius.circular(25),
+                                color: Colors.grey.withValues(alpha: 0.1),
+                              ),
+                              child: Padding(
+                                padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+                                child: Row(
+                                  mainAxisSize: MainAxisSize.min,
+                                  children: [
+                                    Icon(Icons.sunny, size: 16, color: Color(0xFFFFD700),),
+                                    SizedBox(width: 5,),
+                                    Text('Starting in 1 days')
+                                  ],
+                                ),
+                              ),
+                            ),
+                            SizedBox(height: 8,),
+                            Text(
+                              'My Photo Grid Challenge',
+                              style: TextStyle(
+                                fontSize: 18,
+                                fontWeight: FontWeight.bold
+                              ),
+                            ),
+                            Text(
+                              'Lorem ipsum dolor sit amet, consectetur adipiscing elit.  In fermentum arcu eu enim condimentum, feugiat sagittis neque consectetur. Nullam at placerat magna, nec tempor lectus. Sed dictum lacus ac purus congue, eu fringilla est dictum. Nulla mollis quis justo id cursus. Nullam lacus velit, consequat eget lectus at, egestas commodo nisl. Cras tincidunt suscipit magna id consectetur.  ',
+                              overflow: TextOverflow.ellipsis,
+                              maxLines: 2,
+                            )
+                          ],
+                        ),
+                      ),
+                      Container(
+                        width: 70,
+                        height: 70,
+                        decoration: BoxDecoration(
+                          color: Colors.deepPurpleAccent,
+                          borderRadius: BorderRadius.circular(40)
+                        ),
+                        child: ClipOval(child: CachedNetworkImage(imageUrl: 'https://pbs.twimg.com/media/G95JshnWcAADzN2?format=jpg&name=large')),
+                      )
+                    ],
+                  ),
+                  SizedBox(height: 15),
+                  Align(
+                    alignment: Alignment.bottomRight,
+                    child: Container(
+                      decoration: BoxDecoration(
+                        color: Colors.teal.withBlue(200),
+                        borderRadius: BorderRadius.circular(30)
+                      ),
+                      child: Padding(
+                        padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 5),
+                        child: Text(
+                          'Join',
+                          style: TextStyle(fontSize: 18),
+                        ),
+                      ),
+                    ),
+                  )
+                ],
+              ),
+            ),
+          );
+        },
+      ),
+    );
+  }
+}
+
+class HomeFeedPage extends StatefulWidget {
+  const HomeFeedPage({super.key});
+  @override
+  // ignore: library_private_types_in_public_api
+  _HomeFeedPageState createState() => _HomeFeedPageState();
+}
+
+class _HomeFeedPageState extends State<HomeFeedPage> {
+  @override
+  Widget build(BuildContext context) {
+    final posts = FirebaseFirestore.instance.collection('Posts').orderBy('postDate', descending: true); 
+    final likes = FirebaseFirestore.instance.collection('Likes');
     return StreamBuilder(
-      stream: users.snapshots(),
+      stream: (posts.snapshots()),
       builder: (context, snapshot) {
         if (!snapshot.hasData) return CircularProgressIndicator();
         final docs = snapshot.data!.docs;
-
-        return Scaffold(
-            appBar: AppBar(
-              title: const Text('Thingy'),
-              actions: [
-                IconButton(
-                  onPressed: () async {
-                    Navigator.push(
-                      context,
-                      MaterialPageRoute(builder: (context) => SettingsPage())
-                    );
-                  },
-                  icon: const Icon(Icons.settings),
-                )
-              ],
-            ),
-            body: Stack(
-              children: [
-                ListView(
-                  children: docs.map((d) => PostTemplate(postData: d.data(), favorited: likes.doc(d.id), postId: d.id)).toList(),
-                ),
-                Positioned(
-                  bottom: 20,
-                  right: 20,
-                  child: FloatingActionButton(
-                    onPressed: () async{
-                      final picker = ImagePicker();
-                      final List<XFile> picked = await picker.pickMultiImage();
-                      if (picked.isEmpty) return;
-                      for (XFile image in picked){
-                        final fileSize = await image.length(); // in bytes
-
-                        const maxSize = 5 * 1024 * 1024; // 5 MB limit
-
-                        if (fileSize > maxSize) {
-                          if (mounted){
-                            ScaffoldMessenger.of(context).showSnackBar(
-                              SnackBar(
-                                content: Text("File too large. Maximum allowed is 5MB."),
-                              ),
-                            );    
-                          }
-                          return;                  
-                        }
-                      }
-
-
-                      final details = await Navigator.push(
-                        // ignore: use_build_context_synchronously
-                        context,
-                        MaterialPageRoute(builder: (context) => UploadPage(imagePath: picked.map((p)=>p.path).toList())),
-                      );
-                      if (details == null) return;
-                      List<Map> imageUIDs = [];
-                      for (XFile image in picked){
-                        final bytes = await image.readAsBytes();
-                        final uploader = CloudflareR2Uploader(
-                          accountId: dotenv.get('accountId'), 
-                          accessKeyId: dotenv.get('accessKeyId'), 
-                          secretAccessKey: dotenv.get('secretAccessKey'), 
-                          bucketName: 'images'
-                        );
-                        // Build a unique filename to avoid collisions in the bucket/DB.
-                        final originalName = image.name;
-                        final dotIndex = originalName.lastIndexOf('.');
-                        final extension = dotIndex != -1 ? originalName.substring(dotIndex) : '';
-                        final uniqueName = '${DateTime.now().millisecondsSinceEpoch}_${FirebaseAuth.instance.currentUser?.uid ?? 'anon'}$extension';
-                        Map imageSize = await getImageSize(image);
-                        imageUIDs.add({
-                          'imageId': uniqueName,
-                          'width': imageSize['width'],
-                          'height': imageSize['height'],
-                        });
-                        // Upload and capture the returned URL so we can store it in Firestore.
-                        await uploader.uploadFile(
-                          fileBytes: bytes,
-                          fileName: uniqueName,
-                          onProgress: (progress) {
-                            // setState(() {
-                            //   _progress = progress;
-                            // });
-                          },
-                        );
-                      }
-
-                      final now = DateTime.now();
-                      DocumentReference docId = await FirebaseFirestore.instance.collection('Posts').add({
-                        'authorID': FirebaseAuth.instance.currentUser!.uid,
-                        'postDate': now,
-                        'likeCount': 0,
-                        'caption': details,
-                        'imageDetails': imageUIDs,
-                      });
-                      await FirebaseFirestore.instance.collection('Users').doc(FirebaseAuth.instance.currentUser?.uid).collection('Posts').doc(docId.id).set({
-                        'postDate': now,
-                      });
-                    },
-                    child: Icon(Icons.add),
-                  ),
-                )
-              ],
-            )
-          );
+    
+        return ListView(
+          cacheExtent: 1000,
+          children: docs.map((d) => PostTemplate(postData: d.data(), favorited: likes.doc(d.id), postId: d.id)).toList(),
+        );
       },
     );
-
   }
 }
 
@@ -332,53 +475,61 @@ class _PostTemplateState extends State<PostTemplate> {
         Stack(
           children: [
             postData.containsKey('imageDetails') && postData['imageDetails'] != null
-                ? FutureBuilder(
-                    future: future,
-                    builder: (context, snapshot) {
-                        if (snapshot.connectionState == ConnectionState.waiting) {
-                          return const Center(child: CircularProgressIndicator());
-                        } else if (snapshot.hasError) {
-                          return const Center(child: Text('Error loading data'));
-                        } else if (snapshot.hasData) {
-                          return SizedBox(
-                            height: findHeightestImage(postData['imageDetails']) != null ? MediaQuery.sizeOf(context).width / findHeightestImage(postData['imageDetails'])! : MediaQuery.sizeOf(context).width,
-                            child: PageView.builder(
-                              controller: _pageController,
-                              itemCount: postData['imageDetails'].length,
-                              itemBuilder: (context, index) {
-                                return GestureDetector(
-                                  onLongPress: () {
-                                    ImageOverlay.show(
-                                      context,
-                                      postData['imageDetails'][index]
-                                    );
-                                  },
-                                  onDoubleTap: () => likePost(),
-                                  child: Center(
-                                    child: CachedNetworkImage(
-                                      imageUrl: 'https://pub-b665727283304785a65fc86be829fa67.r2.dev/${postData['imageDetails'][index]['imageId']}',
-                                      width: MediaQuery.sizeOf(context).width,
-                                      fit: BoxFit.cover,
-                                      placeholder: (_, __) => Center(child: CircularProgressIndicator()),
-                                    ),
-                                  )
+              ? FutureBuilder(
+                future: future,
+                builder: (context, snapshot) {
+                  if (snapshot.connectionState == ConnectionState.waiting) {
+                    return const Center(child: CircularProgressIndicator());
+                  } else if (snapshot.hasError) {
+                    return const Center(child: Text('Error loading data'));
+                  } else if (snapshot.hasData) {
+                    return ConstrainedBox(
+                      constraints: BoxConstraints(
+                        maxHeight: MediaQuery.sizeOf(context).width * 3/2 // Stop images being too long
+                      ),
+                      child: SizedBox( // function height could be the problem -> add to caching map
+                        height: findHeightestImage(postData['imageDetails']) != null ? MediaQuery.sizeOf(context).width / findHeightestImage(postData['imageDetails'])! : MediaQuery.sizeOf(context).width,
+                        child: PageView.builder(
+                          controller: _pageController,
+                          itemCount: postData['imageDetails'].length,
+                          itemBuilder: (context, index) {
+                            return GestureDetector(
+                              onLongPress: () {
+                                ImageOverlay.show(
+                                  context,
+                                  postData['imageDetails'][index]
                                 );
                               },
-                              onPageChanged: (newPage) {
-                                setState(() => _currentPage = newPage);
-                              },
-                            ),
-                          );
-                        } else {
-                          return const Center(child: Text('No data available'));
-                        }
-                      },
-                    )
-                : Container(
-                    height: MediaQuery.sizeOf(context).width,
-                    width: MediaQuery.sizeOf(context).width,
-                    color: Colors.grey.shade700,
-                  ),
+                              onDoubleTap: () => likePost(),
+                              child: Center(
+                                child: CachedNetworkImage(
+                                  imageUrl: (postData['imageDetails'][index]['imageId']?.isNotEmpty ?? false)
+                                      ? 'https://pub-b665727283304785a65fc86be829fa67.r2.dev/${postData['imageDetails'][index]['imageId']}'
+                                      : 'https://via.placeholder.com/150',
+                                  width: MediaQuery.sizeOf(context).width,
+                                  fit: BoxFit.cover,
+                                  placeholder: (_, __) => Center(child: CircularProgressIndicator()),
+                                  errorWidget: (_, __, ___) => const SizedBox(),
+                                ),
+                              )
+                            );
+                          },
+                          onPageChanged: (newPage) {
+                            setState(() => _currentPage = newPage);
+                          },
+                        ),
+                      ),
+                    );
+                  } else {
+                    return const Center(child: Text('No data available'));
+                  }
+                },
+              )
+              : Container(
+                  height: MediaQuery.sizeOf(context).width,
+                  width: MediaQuery.sizeOf(context).width,
+                  color: Colors.grey.shade700,
+                ),
 
             Positioned(
               top: 5,
@@ -426,7 +577,7 @@ class _PostTemplateState extends State<PostTemplate> {
                                 ),
                           Text(data['displayName']),
                           Spacer(),
-                          if (currentUid == postData['authorID'])
+                          // if (currentUid == postData['authorID'])
                           GestureDetector(
                             onTap: (){
                               showModalBottomSheet(
@@ -683,6 +834,7 @@ class ImageOverlay {
                               ? 'https://pub-b665727283304785a65fc86be829fa67.r2.dev/${imageData['imageId']}'
                               : '',
                           fit: BoxFit.cover,
+                          errorWidget: (_, __, ___) => const SizedBox(),
                         ),
                       ),
                     ),
