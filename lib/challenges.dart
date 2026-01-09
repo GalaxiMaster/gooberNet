@@ -2,6 +2,7 @@ import 'package:cached_network_image/cached_network_image.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:flutter/material.dart';
+import 'package:goober_net/utils.dart';
 import 'package:goober_net/widgets.dart';
 import 'package:google_fonts/google_fonts.dart';
 import 'dart:io';
@@ -232,7 +233,38 @@ class ChallengeDetails extends StatefulWidget {
 
 class _ChallengeDetailsState extends State<ChallengeDetails> {
   Map<int, Uint8List> selectedImages = {};
+  
+  // Helper to get the local path
+  Future<String> get _localPath async {
+    final directory = await getApplicationDocumentsDirectory();
+    return directory.path;
+  }
 
+  // Save image to disk
+  Future<void> _persistImage(int index, Uint8List bytes) async {
+    final path = await _localPath;
+    final file = File('$path/challenge_img_$index.png');
+    await file.writeAsBytes(bytes);
+  }
+
+  // Load all saved images from disk
+  Future<void> _loadSavedImages() async {
+    final path = await _localPath;
+    for (int i = 0; i < 9; i++) {
+      final file = File('$path/challenge_img_$i.png');
+      if (await file.exists()) {
+        Uint8List bytes = await file.readAsBytes();
+        setState(() {
+          selectedImages[i] = bytes;
+        });
+      }
+    }
+  }
+  @override
+  initState(){
+    super.initState();
+    _loadSavedImages();
+  }
   @override
   Widget build(BuildContext context) {
     return Scaffold(
@@ -268,13 +300,14 @@ class _ChallengeDetailsState extends State<ChallengeDetails> {
                   
                           final res = await picker.pickImage(
                             source: ImageSource.gallery,
-                            imageQuality: 90, // optional compression
+                            imageQuality: 100, // optional compression
                           );
                           if (res != null){
                             Uint8List imageAsBytes = await res.readAsBytes();
                             setState(() {
                               selectedImages[index] = imageAsBytes;
                             });
+                            await _persistImage(index, imageAsBytes);
                           }
                         },
                         child: ClipRRect(
@@ -309,10 +342,11 @@ class _ChallengeDetailsState extends State<ChallengeDetails> {
                             LoadingOverlay loadingOverlay = LoadingOverlay();
                             loadingOverlay.showLoadingOverlay(context);
                             File file = await createNineImageCollageCanvas(images: selectedImages.values.toList());
-                            if (await file.exists()) {
-                              // Post
-                            }
                             loadingOverlay.removeLoadingOverlay();
+                            if (await file.exists()) {
+                              if (!context.mounted) return;
+                              postAndUpload([XFile(file.path)], context);
+                            }
                           }, 
                           label: Text(
                             'Post',
