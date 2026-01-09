@@ -2,12 +2,14 @@ import 'package:cached_network_image/cached_network_image.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:flutter/material.dart';
+import 'package:goober_net/widgets.dart';
 import 'package:google_fonts/google_fonts.dart';
 import 'dart:io';
 import 'dart:typed_data';
 import 'package:image_picker/image_picker.dart';
 import 'package:path_provider/path_provider.dart';
 import 'dart:ui' as ui;
+import 'package:share_plus/share_plus.dart';
 
 class ChallengesPage extends StatefulWidget {
   const ChallengesPage({super.key});
@@ -248,51 +250,115 @@ class _ChallengeDetailsState extends State<ChallengeDetails> {
           SliverToBoxAdapter(
             child: Padding(
               padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
-              child: GridView.builder(
-                physics: const NeverScrollableScrollPhysics(),
-                gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
-                  crossAxisCount: 3,
-                  crossAxisSpacing: 2.5,
-                  mainAxisSpacing: 2.5,
-                  childAspectRatio: 1.0, // forces squares
-                ),
-                itemCount: 9,
-                itemBuilder: (context, index) {
-                  return GestureDetector(
-                    onTap: () async {
-                      final ImagePicker picker = ImagePicker();
-              
-                      final res = await picker.pickImage(
-                        source: ImageSource.gallery,
-                        imageQuality: 90, // optional compression
-                      );
-                      if (res != null){
-                        Uint8List imageAsBytes = await res.readAsBytes();
-                        setState(() {
-                          selectedImages[index] = imageAsBytes;
-                        });
-                        if (selectedImages.length == 9){
-                          createNineImageCollageCanvas(images: selectedImages.values.toList());
-                        }
-                      }
-                    },
-                    child: ClipRRect(
-                      borderRadius: BorderRadius.circular(2.5),
-                      child: Container(
-                        alignment: Alignment.center,
-                        decoration: BoxDecoration(color: Colors.blueGrey),
-                        child: selectedImages.containsKey(index) 
-                          ? Image.memory(
-                            // width: width, 
-                            // height: height, 
-                            selectedImages[index]!
-                          ) 
-                          : Icon(Icons.upload),
-                      ),
+              child: Column(
+                children: [
+                  GridView.builder(
+                    physics: const NeverScrollableScrollPhysics(),
+                    gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
+                      crossAxisCount: 3,
+                      crossAxisSpacing: 2.5,
+                      mainAxisSpacing: 2.5,
+                      childAspectRatio: 1.0, // forces squares
                     ),
-                  );
-                },
-                shrinkWrap: true,
+                    itemCount: 9,
+                    itemBuilder: (context, index) {
+                      return GestureDetector(
+                        onTap: () async {
+                          final ImagePicker picker = ImagePicker();
+                  
+                          final res = await picker.pickImage(
+                            source: ImageSource.gallery,
+                            imageQuality: 90, // optional compression
+                          );
+                          if (res != null){
+                            Uint8List imageAsBytes = await res.readAsBytes();
+                            setState(() {
+                              selectedImages[index] = imageAsBytes;
+                            });
+                          }
+                        },
+                        child: ClipRRect(
+                          borderRadius: BorderRadius.circular(2.5),
+                          child: Container(
+                            decoration: BoxDecoration(color: Colors.blueGrey),
+                            child: selectedImages.containsKey(index) 
+                              ? Image.memory(
+                                fit: BoxFit.cover,
+                                // width: width, 
+                                // height: height, 
+                                selectedImages[index]!
+                              ) 
+                              : Icon(Icons.upload),
+                          ),
+                        ),
+                      );
+                    },
+                    shrinkWrap: true,
+                  ),
+                  Row(
+                    spacing: 16,
+                    children: [
+                      Container(
+                        padding: EdgeInsets.symmetric(horizontal: 8),
+                        decoration: BoxDecoration(
+                          color: Color.fromARGB(255, 40, 44, 52), 
+                          borderRadius: BorderRadius.circular(40)
+                        ),
+                        child: TextButton.icon(
+                          onPressed: () async {
+                            LoadingOverlay loadingOverlay = LoadingOverlay();
+                            loadingOverlay.showLoadingOverlay(context);
+                            File file = await createNineImageCollageCanvas(images: selectedImages.values.toList());
+                            if (await file.exists()) {
+                              // Post
+                            }
+                            loadingOverlay.removeLoadingOverlay();
+                          }, 
+                          label: Text(
+                            'Post',
+                            style: TextStyle(
+                              color: Colors.white
+                            ),
+                          ),
+                          icon: Icon(Icons.post_add),
+                          iconAlignment: IconAlignment.end,
+                        ),
+                      ),
+                      Container(
+                        padding: EdgeInsets.symmetric(horizontal: 8),
+                        decoration: BoxDecoration(
+                          color: Color.fromARGB(255, 40, 44, 52), 
+                          borderRadius: BorderRadius.circular(40)
+                        ),
+                        child: TextButton.icon(
+                          onPressed: () async {
+                            LoadingOverlay loadingOverlay = LoadingOverlay();
+                            loadingOverlay.showLoadingOverlay(context);
+                            File file = await createNineImageCollageCanvas(images: selectedImages.values.toList());
+                            if (await file.exists()) {
+                              await SharePlus.instance.share(
+                                ShareParams(
+                                  files: [XFile(file.path)],
+                                  previewThumbnail: XFile(file.path),
+                                  text: 'Your canvas',
+                                ),
+                              );
+                            }
+                            loadingOverlay.removeLoadingOverlay();
+                          }, 
+                          label: Text(
+                            'Share',
+                            style: TextStyle(
+                              color: Colors.white
+                            ),
+                          ),
+                          icon: Icon(Icons.share),
+                          iconAlignment: IconAlignment.end,
+                        ),
+                      )
+                    ],
+                  ),
+                ],
               ),
             )
           ),
