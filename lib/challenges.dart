@@ -5,9 +5,9 @@ import 'package:flutter/material.dart';
 import 'package:google_fonts/google_fonts.dart';
 import 'dart:io';
 import 'dart:typed_data';
-import 'package:image/image.dart' as img;
 import 'package:image_picker/image_picker.dart';
 import 'package:path_provider/path_provider.dart';
+import 'dart:ui' as ui;
 
 class ChallengesPage extends StatefulWidget {
   const ChallengesPage({super.key});
@@ -261,7 +261,7 @@ class _ChallengeDetailsState extends State<ChallengeDetails> {
                   return GestureDetector(
                     onTap: () async {
                       final ImagePicker picker = ImagePicker();
-
+              
                       final res = await picker.pickImage(
                         source: ImageSource.gallery,
                         imageQuality: 90, // optional compression
@@ -271,6 +271,9 @@ class _ChallengeDetailsState extends State<ChallengeDetails> {
                         setState(() {
                           selectedImages[index] = imageAsBytes;
                         });
+                        if (selectedImages.length == 9){
+                          createNineImageCollageCanvas(images: selectedImages.values.toList());
+                        }
                       }
                     },
                     child: ClipRRect(
@@ -297,7 +300,6 @@ class _ChallengeDetailsState extends State<ChallengeDetails> {
       )
     );
   }
-
 }
 
 class _HeaderImage extends StatelessWidget {
@@ -361,55 +363,67 @@ class _HeaderImage extends StatelessWidget {
   }
 }
 
-
-Future<File> createNineImageCollage({
+Future<File> createNineImageCollageCanvas({
   required List<Uint8List> images,
   int tileSize = 512,
+  double borderRadius = 15,
+  double spacing = 6,
 }) async {
-  if (images.length != 9) {
-    throw ArgumentError('Exactly 9 images are required');
-  }
+  final int canvasSize = ((tileSize * 3) + (spacing * 2)).toInt();
+  final ui.PictureRecorder recorder = ui.PictureRecorder();
+  final Canvas canvas = Canvas(recorder);
 
-  // Final canvas: 3 x 3 tiles
-  final int canvasSize = tileSize * 3;
-  final img.Image collage =
-      img.Image(width: canvasSize, height: canvasSize);
+  // 1. Draw Background (optional)
+  final Paint backgroundPaint = Paint()..color = Colors.transparent;
+  canvas.drawRect(Rect.fromLTWH(0, 0, canvasSize.toDouble(), canvasSize.toDouble()), backgroundPaint);
 
   for (int i = 0; i < images.length; i++) {
-    final img.Image original = img.decodeImage(images[i])!;
+    // Decode image into a GPU-friendly ui.Image
+    final ui.Codec codec = await ui.instantiateImageCodec(images[i]);
+    final ui.FrameInfo frame = await codec.getNextFrame();
+    final ui.Image uiImg = frame.image;
 
-    // Crop to square (center)
-    final int cropSize =
-        original.width < original.height ? original.width : original.height;
-
-    final img.Image square = img.copyCrop(
-      original,
-      x: (original.width - cropSize) ~/ 2,
-      y: (original.height - cropSize) ~/ 2,
-      width: cropSize,
-      height: cropSize,
-    );
-
-    // Resize to tile size
-    final img.Image resized =
-        img.copyResize(square, width: tileSize, height: tileSize);
-
-    // Calculate grid position
     final int row = i ~/ 3;
     final int col = i % 3;
+    
+    // Calculate position
+    final double x = col * (tileSize + spacing);
+    final double y = row * (tileSize + spacing);
+    final Rect destRect = Rect.fromLTWH(x, y, tileSize.toDouble(), tileSize.toDouble());
 
-    img.compositeImage(
-      collage,
-      resized,
-      dstX: col * tileSize,
-      dstY: row * tileSize,
-    );
+    // 2. Create the Rounded Clip
+    canvas.save();
+    canvas.clipRRect(RRect.fromRectAndRadius(destRect, Radius.circular(borderRadius)));
+
+    // 3. Draw the image into the clipped area (Center Crop logic)
+    _paintCenterCrop(canvas, uiImg, destRect);
+    
+    canvas.restore();
   }
 
-  // Save output
+  // Convert Canvas to Image
+  final ui.Image finalImage = await recorder.endRecording().toImage(canvasSize, canvasSize);
+  final ByteData? byteData = await finalImage.toByteData(format: ui.ImageByteFormat.png);
+  
+  // Save to file
   final Directory dir = await getTemporaryDirectory();
-  final File output = File('${dir.path}/collage_${DateTime.now().millisecondsSinceEpoch}.png');
+  final File file = File('${dir.path}/collage_myCollage.png');
+  await file.writeAsBytes(byteData!.buffer.asUint8List());
+  
+  return file;
+}
 
-  await output.writeAsBytes(img.encodePng(collage));
-  return output;
+void _paintCenterCrop(Canvas canvas, ui.Image image, Rect destRect) {
+  final double srcWidth = image.width.toDouble();
+  final double srcHeight = image.height.toDouble();
+  final double side = srcWidth < srcHeight ? srcWidth : srcHeight;
+
+  final Rect srcRect = Rect.fromLTWH(
+    (srcWidth - side) / 2,
+    (srcHeight - side) / 2,
+    side,
+    side,
+  );
+
+  canvas.drawImageRect(image, srcRect, destRect, Paint()..filterQuality = FilterQuality.high);
 }
