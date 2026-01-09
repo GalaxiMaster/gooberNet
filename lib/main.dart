@@ -167,21 +167,35 @@ class HomeFeedPage extends StatefulWidget {
 }
 
 class _HomeFeedPageState extends State<HomeFeedPage> {
+  late Future<QuerySnapshot> postSnapshot;
+  final posts = FirebaseFirestore.instance.collection('Posts').orderBy('postDate', descending: true); 
+  final likes = FirebaseFirestore.instance.collection('Likes');
+
+  @override
+  initState(){
+    super.initState();
+    getDocsFuture();
+  }
+  Future<void> getDocsFuture() async {
+    postSnapshot = posts.get();
+  }
   @override
   Widget build(BuildContext context) {
-    final posts = FirebaseFirestore.instance.collection('Posts').orderBy('postDate', descending: true); 
-    final likes = FirebaseFirestore.instance.collection('Likes');
-    return StreamBuilder(
-      stream: (posts.snapshots()),
-      builder: (context, snapshot) {
-        if (!snapshot.hasData) return CircularProgressIndicator();
-        final docs = snapshot.data!.docs;
-    
-        return ListView(
-          cacheExtent: 1000,
-          children: docs.map((d) => PostTemplate(postData: d.data(), favorited: likes.doc(d.id), postId: d.id)).toList(),
-        );
-      },
+
+    return RefreshIndicator(
+      onRefresh: () => getDocsFuture(),
+      child: FutureBuilder(
+        future: postSnapshot,
+        builder: (context, snapshot) {
+          if (snapshot.connectionState == ConnectionState.waiting) return CircularProgressIndicator();
+          final docs = snapshot.data!.docs;
+      
+          return ListView(
+            cacheExtent: 1000,
+            children: docs.map((d) => PostTemplate(postData: d.data() as Map<dynamic, dynamic>, favorited: likes.doc(d.id), postId: d.id)).toList(),
+          );
+        },
+      ),
     );
   }
 }
