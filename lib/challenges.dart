@@ -20,205 +20,213 @@ class ChallengesPage extends StatefulWidget {
 }
 
 class _ChallengesPageState extends State<ChallengesPage> {
-  late Map<String, Map<String, dynamic>> userChallenges;
+  // 1. Store the Future to prevent re-triggering on every rebuild
+  late Future<Map<String, Map<String, dynamic>>> _challengesFuture;
+  
+  // 2. Local state for quick UI updates
+  Map<String, Map<String, dynamic>> userChallenges = {};
+  Map<String, List<int>> _progressCache = {};
 
+  @override
+  void initState() {
+    super.initState();
+    _challengesFuture = _loadAllData();
+  }
 
-  Future<Map<String, Map<String, dynamic>>> getChallenges() async {
-    QuerySnapshot<Map<String, dynamic>> allChallenges = await FirebaseFirestore.instance.collection('Challenges').get();
+  Future<Map<String, Map<String, dynamic>>> _loadAllData() async {
+    QuerySnapshot<Map<String, dynamic>> allChallenges = 
+        await FirebaseFirestore.instance.collection('Challenges').get();
 
-    QuerySnapshot<Map<String, dynamic>> userChallengesQuery = await FirebaseFirestore.instance.collection('Users').doc(FirebaseAuth.instance.currentUser!.uid).collection('JoinedChallenges').get();
+    QuerySnapshot<Map<String, dynamic>> userChallengesQuery = 
+        await FirebaseFirestore.instance.collection('Users')
+            .doc(FirebaseAuth.instance.currentUser!.uid)
+            .collection('JoinedChallenges').get();
 
     userChallenges = userChallengesQuery.docs.asMap().map((_, doc) {
-      return MapEntry(
-        doc.id,
-        doc.data(),
-      );
+      return MapEntry(doc.id, doc.data());
     });
 
-    return allChallenges.docs.asMap().map((_, doc) {
-      return MapEntry(
-        doc.id,
-        doc.data(),
-      );
-    });
-  }
-  Duration getTimeRemaining(DateTime startTime, DateTime endTime) {
-    DateTime now = DateTime.now();
-    if (startTime.isBefore(now)){
-      Duration difference = startTime.difference(now);
-      return difference;
-    } else {
-      return Duration.zero;
+    final directory = await getApplicationDocumentsDirectory();
+    final path = directory.path;
+
+    for (var doc in allChallenges.docs) {
+      String challengeName = doc.data()['name'] ?? "";
+      int count = 0;
+      for (int i = 0; i < 9; i++) {
+        final file = File('$path/challenge_${challengeName}$i.png');
+        if (await file.exists()) count++;
+      }
+      _progressCache[challengeName] = [count, 9];
     }
+
+    return allChallenges.docs.asMap().map((_, doc) => MapEntry(doc.id, doc.data()));
+  }
+
+  Duration getTimeRemaining(DateTime startTime) {
+    DateTime now = DateTime.now();
+    return startTime.difference(now);
+  }
+
+  void _refreshData() {
+    setState(() {
+      _challengesFuture = _loadAllData();
+    });
   }
 
   @override
   Widget build(BuildContext context) {
-    return FutureBuilder(
-    future: getChallenges(),
+    return FutureBuilder<Map<String, Map<String, dynamic>>>(
+      future: _challengesFuture, // Points to the variable, not the function
       builder: (context, snapshot) {
         if (snapshot.connectionState == ConnectionState.waiting) {
           return const Center(child: CircularProgressIndicator());
         } else if (snapshot.hasError) {
-          return const Center(child: Text('Error loading data'));
-        } else if (snapshot.hasData) {
-          return Padding(
-            padding: const EdgeInsets.all(8.0),
-            child: ListView.builder(
-              itemCount: snapshot.data!.length,
-              itemBuilder: (BuildContext context, int index) { 
-                MapEntry challenge = snapshot.data!.entries.toList()[index];
-                return GestureDetector(
-                  onTap: (){
-                    Navigator.push(
-                      context,
-                      MaterialPageRoute(builder: (context) => ChallengeDetails(data: challenge.value,))
-                    );
-                  },
-                  child: Card(
-                    color: Colors.grey.withValues(alpha: 0.2),
-                    child: Padding(
-                      padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
-                      child: Column(
-                        children: [
-                          Row(
-                            crossAxisAlignment: CrossAxisAlignment.start,
-                            mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                            children: [
-                              Expanded(
-                                child: Column(
-                                  mainAxisAlignment: MainAxisAlignment.start,
-                                  crossAxisAlignment: CrossAxisAlignment.start,
-                                  children: [
-                                    Container(
-                                      decoration: BoxDecoration(
-                                        borderRadius: BorderRadius.circular(25),
-                                        color: Colors.grey.withValues(alpha: 0.1),
-                                      ),
-                                      child: Padding(
-                                        padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
-                                        child: Builder( // TODO add ending soon
-                                          builder: (context) {
-                                            Duration timeTillStart = getTimeRemaining(challenge.value['startTime'].toDate(), challenge.value['endTime'].toDate());
-                                            bool isActive = timeTillStart <= Duration.zero;
-                                            return Row(
-                                              mainAxisSize: MainAxisSize.min,
-                                              children: [
-                                                Icon(
-                                                  Icons.sunny, 
-                                                  size: 16, 
-                                                  color: isActive ? Colors.green : Color(0xFFFFD700),
-                                                ),
-                                                SizedBox(width: 5,),
-                                                Text(
-                                                   isActive
-                                                    ? 'Active'
-                                                    : 'Starting in ${timeTillStart.inDays} days'
-                                                )
-                                              ],
-                                            );
-                                          }
-                                        ),
-                                      ),
-                                    ),
-                                    SizedBox(height: 8,),
-                                    Text(
-                                      challenge.value['name'],
-                                      style: TextStyle(
-                                        fontSize: 18,
-                                        fontWeight: FontWeight.bold
-                                      ),
-                                    ),
-                                    Text(
-                                      challenge.value['description'],
-                                      overflow: TextOverflow.ellipsis,
-                                      maxLines: 2,
-                                    )
-                                  ],
-                                ),
-                              ),
-                              Container(
-                                width: 70,
-                                height: 70,
-                                decoration: BoxDecoration(
-                                  color: Colors.deepPurpleAccent,
-                                  borderRadius: BorderRadius.circular(40)
-                                ),
-                                child: ClipOval(child: CachedNetworkImage(imageUrl: 'https://pbs.twimg.com/media/G95JshnWcAADzN2?format=jpg&name=large')),
-                              )
-                            ],
-                          ),
-                          SizedBox(height: 15),
-                          if (!userChallenges.containsKey(challenge.key))
-                          Align(
-                            alignment: Alignment.bottomRight,
-                            child: GestureDetector(
-                              onTap: () {
-                                // Join Challenge
-                                Map<String, dynamic> data = {
-                                  'joinedAt': DateTime.now(),
-                                  // 'challengeRef': ''
-                                };
-                                FirebaseFirestore.instance.collection('Users').doc(FirebaseAuth.instance.currentUser!.uid).collection('JoinedChallenges').doc(challenge.key).set(data);
-                                
-                                setState(() {
-                                  userChallenges[challenge.key] = data;
-                                });
-                              },
-                              child: Container(
-                                decoration: BoxDecoration(
-                                  color: Colors.teal.withBlue(200),
-                                  borderRadius: BorderRadius.circular(30)
-                                ),
-                                child: Padding(
-                                  padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 5),
-                                  child: Text(
-                                    'Join',
-                                    style: TextStyle(fontSize: 18),
-                                  ),
-                                ),
-                              ),
-                            ),
-                          )
-                          else
-                          Align(
-                            alignment: Alignment.bottomRight,
-                            child: GestureDetector(
-                              onTap: () { // TODO add confirmation popup
-                                // Join Challenge
-                                FirebaseFirestore.instance.collection('Users').doc(FirebaseAuth.instance.currentUser!.uid).collection('JoinedChallenges').doc(challenge.key).delete();
-                                
-                                setState(() {
-                                  userChallenges.remove(challenge.key);
-                                });
-                              },
-                              child: Container(
-                                decoration: BoxDecoration(
-                                  color: Colors.redAccent,
-                                  borderRadius: BorderRadius.circular(30)
-                                ),
-                                child: Padding(
-                                  padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 5),
-                                  child: Text(
-                                    'Leave',
-                                    style: TextStyle(fontSize: 18),
-                                  ),
-                                ),
-                              ),
-                            ),
-                          )
-                        ],
-                      ),
+          return const Center(child: Text('Error loading challenges'));
+        }
+
+        final challenges = snapshot.data!.entries.toList();
+
+        return Padding(
+          padding: const EdgeInsets.all(8.0),
+          child: ListView.builder(
+            itemCount: challenges.length,
+            itemBuilder: (context, index) {
+              final challenge = challenges[index];
+              final String challengeId = challenge.key;
+              final Map data = challenge.value;
+              final bool isJoined = userChallenges.containsKey(challengeId);
+
+              return GestureDetector(
+                onTap: () async {
+                  // Wait for the user to return and then refresh the progress icons
+                  await Navigator.push(
+                    context,
+                    MaterialPageRoute(builder: (context) => ChallengeDetails(data: data)),
+                  );
+                  _refreshData();
+                },
+                child: Card(
+                  color: Colors.grey.withValues(alpha: 0.2),
+                  child: Padding(
+                    padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
+                    child: Column(
+                      children: [
+                        _buildHeader(data),
+                        const SizedBox(height: 10),
+                        
+                        // Show Progress bar ONLY if joined, using cached data
+                        if (isJoined) _buildProgressBar(data['name']),
+
+                        _buildActionButtons(challengeId, isJoined),
+                      ],
                     ),
                   ),
-                );
-              },
-            ),
-          );
-        } else {
-          return const Center(child: Text('No data available'));
-        }
+                ),
+              );
+            },
+          ),
+        );
       },
+    );
+  }
+
+  // --- UI SUB-WIDGETS ---
+
+  Widget _buildHeader(Map data) {
+    Duration timeTillStart = getTimeRemaining(data['startTime'].toDate());
+    bool isActive = timeTillStart <= Duration.zero;
+
+    return Row(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Expanded(
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Container(
+                padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+                decoration: BoxDecoration(
+                  borderRadius: BorderRadius.circular(25),
+                  color: Colors.grey.withValues(alpha: 0.1),
+                ),
+                child: Row(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    Icon(Icons.sunny, size: 16, color: isActive ? Colors.green : const Color(0xFFFFD700)),
+                    const SizedBox(width: 5),
+                    Text(isActive ? 'Active' : 'Starting in ${timeTillStart.inDays} days'),
+                  ],
+                ),
+              ),
+              const SizedBox(height: 8),
+              Text(data['name'], style: const TextStyle(fontSize: 18, fontWeight: FontWeight.bold)),
+              Text(data['description'], overflow: TextOverflow.ellipsis, maxLines: 2),
+            ],
+          ),
+        ),
+        _buildChallengeIcon(),
+      ],
+    );
+  }
+
+  Widget _buildProgressBar(String name) {
+    final progress = _progressCache[name] ?? [0, 9];
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Text('${progress[0]}/${progress[1]}', style: const TextStyle(fontWeight: FontWeight.bold)),
+        const SizedBox(height: 4),
+        LinearProgressIndicator(
+          value: progress[0] / progress[1],
+          borderRadius: BorderRadius.circular(40),
+          minHeight: 12,
+          backgroundColor: const Color.fromARGB(255, 40, 44, 52),
+          valueColor: const AlwaysStoppedAnimation<Color>(Colors.green),
+        ),
+        const SizedBox(height: 15),
+      ],
+    );
+  }
+
+  Widget _buildActionButtons(String id, bool isJoined) {
+    return Align(
+      alignment: Alignment.bottomRight,
+      child: GestureDetector(
+        onTap: () {
+          final docRef = FirebaseFirestore.instance
+              .collection('Users')
+              .doc(FirebaseAuth.instance.currentUser!.uid)
+              .collection('JoinedChallenges')
+              .doc(id);
+
+          setState(() {
+            if (isJoined) {
+              docRef.delete();
+              userChallenges.remove(id);
+            } else {
+              final newData = {'joinedAt': DateTime.now()};
+              docRef.set(newData);
+              userChallenges[id] = newData;
+            }
+          });
+        },
+        child: Container(
+          padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 5),
+          decoration: BoxDecoration(
+            color: isJoined ? Colors.redAccent : Colors.teal.withBlue(200),
+            borderRadius: BorderRadius.circular(30),
+          ),
+          child: Text(isJoined ? 'Leave' : 'Join', style: const TextStyle(fontSize: 18)),
+        ),
+      ),
+    );
+  }
+
+  Widget _buildChallengeIcon() {
+    return Container(
+      width: 70, height: 70,
+      decoration: BoxDecoration(color: Colors.deepPurpleAccent, borderRadius: BorderRadius.circular(40)),
+      child: ClipOval(child: CachedNetworkImage(imageUrl: 'https://pbs.twimg.com/media/G95JshnWcAADzN2?format=jpg&name=large')),
     );
   }
 }
@@ -233,25 +241,19 @@ class ChallengeDetails extends StatefulWidget {
 
 class _ChallengeDetailsState extends State<ChallengeDetails> {
   Map<int, Uint8List> selectedImages = {};
-  
-  // Helper to get the local path
-  Future<String> get _localPath async {
-    final directory = await getApplicationDocumentsDirectory();
-    return directory.path;
-  }
 
   // Save image to disk
   Future<void> _persistImage(int index, Uint8List bytes) async {
-    final path = await _localPath;
-    final file = File('$path/challenge_img_$index.png');
+    final path = await localPath;
+    final file = File('$path/challenge_${widget.data['name']}$index.png');
     await file.writeAsBytes(bytes);
   }
 
   // Load all saved images from disk
   Future<void> _loadSavedImages() async {
-    final path = await _localPath;
+    final path = await localPath;
     for (int i = 0; i < 9; i++) {
-      final file = File('$path/challenge_img_$i.png');
+      final file = File('$path/challenge_${widget.data['name']}$i.png');
       if (await file.exists()) {
         Uint8List bytes = await file.readAsBytes();
         setState(() {
