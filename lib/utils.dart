@@ -6,6 +6,7 @@ import 'package:flutter_dotenv/flutter_dotenv.dart';
 import 'package:goober_net/main.dart';
 import 'package:goober_net/upload_page.dart';
 import 'package:image_picker/image_picker.dart';
+import 'package:path_provider/path_provider.dart';
 
 void postAndUpload(List<XFile> picked, BuildContext context) async { // TODO breakup function
   // for (XFile image in picked){
@@ -75,4 +76,19 @@ void postAndUpload(List<XFile> picked, BuildContext context) async { // TODO bre
   await FirebaseFirestore.instance.collection('Users').doc(FirebaseAuth.instance.currentUser?.uid).collection('Posts').doc(docId.id).set({
     'postDate': now,
   });
+}
+
+
+// Helper to get the local path
+Future<String> get localPath async {
+  final directory = await getApplicationDocumentsDirectory();
+  return directory.path;
+}
+
+Color hexToColor(String hex) {
+  hex = hex.replaceAll('#', '');
+  if (hex.length == 6) {
+    hex = 'FF$hex'; // add full opacity
+  }
+  return Color(int.parse(hex, radix: 16));
 }

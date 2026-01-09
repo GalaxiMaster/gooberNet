@@ -286,6 +286,31 @@ class _ChallengeDetailsState extends State<ChallengeDetails> {
               padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
               child: Column(
                 children: [
+                  Row(
+                    children: [
+                      Text(
+                        'Color target: ',
+                        style: TextStyle(
+                          fontSize: 18
+                        ),
+                      ),
+                      Text(
+                        widget.data['target']['colorName'],
+                        style: GoogleFonts.vt323(
+                          color: hexToColor(widget.data['target']['hexApprox']),
+                          fontSize: 22,
+                          fontWeight: FontWeight.bold
+                        ),
+                      )
+                    ],
+                  ),
+                  Container(
+                    height: 20,
+                    decoration: BoxDecoration(
+                      color: hexToColor(widget.data['target']['hexApprox']),
+                      borderRadius: BorderRadius.circular(5)
+                    ),
+                  ),
                   GridView.builder(
                     physics: const NeverScrollableScrollPhysics(),
                     gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(

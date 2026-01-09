@@ -78,7 +78,7 @@ class HomePage extends StatefulWidget {
 }
 
 class HomePageState extends State<HomePage> {
-  int selectedPageIndex = 1;
+  int selectedPageIndex = 0;
   final posts = FirebaseFirestore.instance.collection('Posts').orderBy('postDate', descending: true); 
   final likes = FirebaseFirestore.instance.collection('Likes');
   final _pages = [    
