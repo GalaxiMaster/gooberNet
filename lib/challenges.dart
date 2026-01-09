@@ -3,6 +3,11 @@ import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:flutter/material.dart';
 import 'package:google_fonts/google_fonts.dart';
+import 'dart:io';
+import 'dart:typed_data';
+import 'package:image/image.dart' as img;
+import 'package:image_picker/image_picker.dart';
+import 'package:path_provider/path_provider.dart';
 
 class ChallengesPage extends StatefulWidget {
   const ChallengesPage({super.key});
@@ -25,7 +30,7 @@ class _ChallengesPageState extends State<ChallengesPage> {
         doc.id,
         doc.data(),
       );
-    });;
+    });
 
     return allChallenges.docs.asMap().map((_, doc) {
       return MapEntry(
@@ -224,6 +229,8 @@ class ChallengeDetails extends StatefulWidget {
 }
 
 class _ChallengeDetailsState extends State<ChallengeDetails> {
+  Map<int, Uint8List> selectedImages = {};
+
   @override
   Widget build(BuildContext context) {
     return Scaffold(
@@ -245,16 +252,41 @@ class _ChallengeDetailsState extends State<ChallengeDetails> {
                 physics: const NeverScrollableScrollPhysics(),
                 gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
                   crossAxisCount: 3,
-                  crossAxisSpacing: 8,
-                  mainAxisSpacing: 8,
+                  crossAxisSpacing: 2.5,
+                  mainAxisSpacing: 2.5,
                   childAspectRatio: 1.0, // forces squares
                 ),
                 itemCount: 9,
                 itemBuilder: (context, index) {
-                  return Container(
-                    color: Colors.blueGrey,
-                    alignment: Alignment.center,
-                    child: Text('$index'),
+                  return GestureDetector(
+                    onTap: () async {
+                      final ImagePicker picker = ImagePicker();
+
+                      final res = await picker.pickImage(
+                        source: ImageSource.gallery,
+                        imageQuality: 90, // optional compression
+                      );
+                      if (res != null){
+                        Uint8List imageAsBytes = await res.readAsBytes();
+                        setState(() {
+                          selectedImages[index] = imageAsBytes;
+                        });
+                      }
+                    },
+                    child: ClipRRect(
+                      borderRadius: BorderRadius.circular(2.5),
+                      child: Container(
+                        alignment: Alignment.center,
+                        decoration: BoxDecoration(color: Colors.blueGrey),
+                        child: selectedImages.containsKey(index) 
+                          ? Image.memory(
+                            // width: width, 
+                            // height: height, 
+                            selectedImages[index]!
+                          ) 
+                          : Icon(Icons.upload),
+                      ),
+                    ),
                   );
                 },
                 shrinkWrap: true,
@@ -327,4 +359,57 @@ class _HeaderImage extends StatelessWidget {
       ],
     );
   }
+}
+
+
+Future<File> createNineImageCollage({
+  required List<Uint8List> images,
+  int tileSize = 512,
+}) async {
+  if (images.length != 9) {
+    throw ArgumentError('Exactly 9 images are required');
+  }
+
+  // Final canvas: 3 x 3 tiles
+  final int canvasSize = tileSize * 3;
+  final img.Image collage =
+      img.Image(width: canvasSize, height: canvasSize);
+
+  for (int i = 0; i < images.length; i++) {
+    final img.Image original = img.decodeImage(images[i])!;
+
+    // Crop to square (center)
+    final int cropSize =
+        original.width < original.height ? original.width : original.height;
+
+    final img.Image square = img.copyCrop(
+      original,
+      x: (original.width - cropSize) ~/ 2,
+      y: (original.height - cropSize) ~/ 2,
+      width: cropSize,
+      height: cropSize,
+    );
+
+    // Resize to tile size
+    final img.Image resized =
+        img.copyResize(square, width: tileSize, height: tileSize);
+
+    // Calculate grid position
+    final int row = i ~/ 3;
+    final int col = i % 3;
+
+    img.compositeImage(
+      collage,
+      resized,
+      dstX: col * tileSize,
+      dstY: row * tileSize,
+    );
+  }
+
+  // Save output
+  final Directory dir = await getTemporaryDirectory();
+  final File output = File('${dir.path}/collage_${DateTime.now().millisecondsSinceEpoch}.png');
+
+  await output.writeAsBytes(img.encodePng(collage));
+  return output;
 }
