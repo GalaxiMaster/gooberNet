@@ -9,7 +9,7 @@ class ProfilePage extends StatefulWidget {
   final Map userData;
   const ProfilePage({super.key, required this.uid, required this.userData});
   @override
-  // ignore: library_private_types_in_public_api
+  // ignore: library_private_types_i``n_public_api
   ProfilePageState createState() => ProfilePageState();
 }
 
