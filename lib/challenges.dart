@@ -330,7 +330,21 @@ class _ChallengeDetailsState extends State<ChallengeDetails> {
                             imageQuality: 100, // optional compression
                           );
                           if (res != null){
+                            final fileSize = await res.length(); // in bytes
+
+                            const maxSize = 5 * 1024 * 1024; // 5 MB limit
+                            if (fileSize > maxSize){
+                              if (context.mounted){
+                                ScaffoldMessenger.of(context).showSnackBar(
+                                    SnackBar(
+                                      content: Text("File too large. Maximum allowed is 5MB."),
+                                    ),
+                                  );    
+                                }
+                                return;
+                            }
                             Uint8List imageAsBytes = await res.readAsBytes();
+
                             setState(() {
                               selectedImages[index] = imageAsBytes;
                             });

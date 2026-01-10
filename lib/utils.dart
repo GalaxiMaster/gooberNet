@@ -8,25 +8,7 @@ import 'package:goober_net/upload_page.dart';
 import 'package:image_picker/image_picker.dart';
 import 'package:path_provider/path_provider.dart';
 
-void postAndUpload(List<XFile> picked, BuildContext context) async { // TODO breakup function
-  // for (XFile image in picked){
-  //   final fileSize = await image.length(); // in bytes
-
-  //   const maxSize = 5 * 1024 * 1024; // 5 MB limit
-
-  //   if (fileSize > maxSize) {
-  //     if (context.mounted){
-  //       ScaffoldMessenger.of(context).showSnackBar(
-  //         SnackBar(
-  //           content: Text("File too large. Maximum allowed is 5MB."),
-  //         ),
-  //       );    
-  //     }
-  //     return;                  
-  //   }
-  // }
-
-
+void postAndUpload(List<XFile> picked, BuildContext context) async { // TODO breakup function. also currently assumes files are within limits
   final details = await Navigator.push(
     // ignore: use_build_context_synchronously
     context,

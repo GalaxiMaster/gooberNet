@@ -142,19 +142,31 @@ class HomePageState extends State<HomePage> {
   }
   
   Widget createPostFab() {
-    return Positioned(
-      bottom: 20,
-      right: 20,
-      child: FloatingActionButton(
-        onPressed: () async{
-          final picker = ImagePicker();
-          final List<XFile> picked = await picker.pickMultiImage();
-          if (picked.isEmpty) return;
-          if (!mounted) return;
-          postAndUpload(picked, context);
-        },
-        child: Icon(Icons.add),
-      ),
+    return FloatingActionButton(
+      onPressed: () async{
+        final picker = ImagePicker();
+        final List<XFile> picked = await picker.pickMultiImage();
+        if (picked.isEmpty) return;
+        for (XFile image in picked){
+          final fileSize = await image.length(); // in bytes
+    
+          const maxSize = 5 * 1024 * 1024; // 5 MB limit
+    
+          if (fileSize > maxSize) {
+            if (context.mounted){
+              ScaffoldMessenger.of(context).showSnackBar(
+                SnackBar(
+                  content: Text("File too large. Maximum allowed is 5MB."),
+                ),
+              );    
+            }
+            return;                  
+          }
+        }
+        if (!mounted) return;
+        postAndUpload(picked, context);
+      },
+      child: Icon(Icons.add),
     );
   }
 }
@@ -429,7 +441,7 @@ class _PostTemplateState extends State<PostTemplate> {
                                 ),
                           Text(data['displayName']),
                           Spacer(),
-                          if (currentUid == postData['authorID'])
+                          // if (currentUid == postData['authorID'])
                           GestureDetector(
                             onTap: (){
                               showModalBottomSheet(
