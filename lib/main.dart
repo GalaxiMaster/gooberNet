@@ -189,7 +189,9 @@ class _HomeFeedPageState extends State<HomeFeedPage> {
     getDocsFuture();
   }
   Future<void> getDocsFuture() async {
-    postSnapshot = posts.get();
+    setState(() {
+      postSnapshot = posts.get();
+    });
   }
   @override
   Widget build(BuildContext context) {

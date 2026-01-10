@@ -4,6 +4,7 @@ import 'package:firebase_auth/firebase_auth.dart';
 import 'package:flutter/material.dart';
 import 'package:goober_net/main.dart';
 import 'package:scrollable_positioned_list/scrollable_positioned_list.dart';
+import 'package:firebase_messaging/firebase_messaging.dart';
 
 class ProfilePage extends StatefulWidget {
   final String uid;
@@ -19,6 +20,8 @@ class ProfilePageState extends State<ProfilePage> {
   final likes = FirebaseFirestore.instance.collection('Likes');
   bool isFollowed = false;
   Map<String, Future<DocumentSnapshot<Map>>> postDataCache = {};
+  String currentUid = FirebaseAuth.instance.currentUser!.uid;
+
   @override
   initState() {
     super.initState();
@@ -64,12 +67,19 @@ class ProfilePageState extends State<ProfilePage> {
                         fontSize: 18,
                       ),
                     ),
+                    if (currentUid != widget.uid)
                     GestureDetector(
                       onTap: () async {
                         if (isFollowed) {
-                          FirebaseFirestore.instance.collection('Users').doc(FirebaseAuth.instance.currentUser!.uid).collection('Following').doc(widget.uid).delete();
+                          FirebaseFirestore.instance.collection('Users').doc(currentUid).collection('Following').doc(widget.uid).delete();
+                          FirebaseMessaging.instance.unsubscribeFromTopic("user_followers_${widget.uid}");
                         } else {
-                          FirebaseFirestore.instance.collection('Users').doc(FirebaseAuth.instance.currentUser!.uid).collection('Following').doc(widget.uid).set({});
+                          FirebaseFirestore.instance.collection('Users').doc(currentUid).collection('Following').doc(widget.uid).set({});
+                          
+                          await requestNotificationPermission();
+
+                          FirebaseMessaging.instance.subscribeToTopic("user_followers_${widget.uid}");
+                          debugPrint("subscribed to user_followers_${widget.uid}");
                         }
                         setState(() {
                           isFollowed = !(isFollowed);
@@ -234,5 +244,21 @@ class _PostPageState extends State<PostPage> {
         },
       ),
     );
+  }
+}
+
+Future<void> requestNotificationPermission() async {
+  FirebaseMessaging messaging = FirebaseMessaging.instance;
+
+  NotificationSettings settings = await messaging.requestPermission(
+    alert: true,
+    badge: true,
+    sound: true,
+  );
+
+  if (settings.authorizationStatus == AuthorizationStatus.authorized) {
+    print('User granted permission');
+  } else {
+    print('User declined or has not accepted permission');
   }
 }

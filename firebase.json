@@ -1,1 +1,39 @@
-{"flutter":{"platforms":{"android":{"default":{"projectId":"goobernet-36192","appId":"1:875660378404:android:abc59957c9107a2dd0f3b1","fileOutput":"android/app/google-services.json"}},"dart":{"lib/firebase_options.dart":{"projectId":"goobernet-36192","configurations":{"android":"1:875660378404:android:abc59957c9107a2dd0f3b1","ios":"1:875660378404:ios:f1d5d429dcc8093dd0f3b1"}}}}}}
+{
+  "flutter": {
+    "platforms": {
+      "android": {
+        "default": {
+          "projectId": "goobernet-36192",
+          "appId": "1:875660378404:android:abc59957c9107a2dd0f3b1",
+          "fileOutput": "android/app/google-services.json"
+        }
+      },
+      "dart": {
+        "lib/firebase_options.dart": {
+          "projectId": "goobernet-36192",
+          "configurations": {
+            "android": "1:875660378404:android:abc59957c9107a2dd0f3b1",
+            "ios": "1:875660378404:ios:f1d5d429dcc8093dd0f3b1"
+          }
+        }
+      }
+    }
+  },
+  "functions": [
+    {
+      "source": "functions",
+      "codebase": "default",
+      "disallowLegacyRuntimeConfig": true,
+      "ignore": [
+        "node_modules",
+        ".git",
+        "firebase-debug.log",
+        "firebase-debug.*.log",
+        "*.local"
+      ],
+      "predeploy": [
+        "npm --prefix \"$RESOURCE_DIR\" run lint"
+      ]
+    }
+  ]
+}

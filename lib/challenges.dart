@@ -53,7 +53,7 @@ class _ChallengesPageState extends State<ChallengesPage> {
       String challengeName = doc.data()['name'] ?? "";
       int count = 0;
       for (int i = 0; i < 9; i++) {
-        final file = File('$path/challenge_${challengeName}$i.png');
+        final file = File('$path/challenge_$challengeName$i.png');
         if (await file.exists()) count++;
       }
       _progressCache[challengeName] = [count, 9];
@@ -76,7 +76,7 @@ class _ChallengesPageState extends State<ChallengesPage> {
   @override
   Widget build(BuildContext context) {
     return FutureBuilder<Map<String, Map<String, dynamic>>>(
-      future: _challengesFuture, // Points to the variable, not the function
+      future: _challengesFuture,
       builder: (context, snapshot) {
         if (snapshot.connectionState == ConnectionState.waiting) {
           return const Center(child: CircularProgressIndicator());
