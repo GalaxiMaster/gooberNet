@@ -1,5 +1,6 @@
 import 'package:cached_network_image/cached_network_image.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
+import 'package:firebase_auth/firebase_auth.dart';
 import 'package:flutter/material.dart';
 import 'package:goober_net/main.dart';
 import 'package:scrollable_positioned_list/scrollable_positioned_list.dart';
@@ -14,16 +15,25 @@ class ProfilePage extends StatefulWidget {
 }
 
 class ProfilePageState extends State<ProfilePage> {
-  late final userPosts;
+  late final Future<QuerySnapshot> userPosts;
   final likes = FirebaseFirestore.instance.collection('Likes');
-
+  bool isFollowed = false;
+  Map<String, Future<DocumentSnapshot<Map>>> postDataCache = {};
   @override
   initState() {
     super.initState();
     setUserCollection();
+    getIsFollowed();
   }
   setUserCollection() async{
-    userPosts = FirebaseFirestore.instance.collection('Users').doc(widget.uid).collection('Posts').orderBy('postDate', descending: true);
+    userPosts = FirebaseFirestore.instance.collection('Users').doc(widget.uid).collection('Posts').orderBy('postDate', descending: true).get();
+  }
+  getIsFollowed() async {
+    final bool res = (await FirebaseFirestore.instance.collection('Users').doc(FirebaseAuth.instance.currentUser!.uid).collection('Following').doc(widget.uid).get()).exists;
+
+    setState(() {
+      isFollowed = res;
+    });
   }
   @override
   Widget build( context) {
@@ -31,42 +41,71 @@ class ProfilePageState extends State<ProfilePage> {
       appBar: AppBar(
         title: const Text('Profile Page'),
       ),
-      body: FutureBuilder<QuerySnapshot>(
-        future: userPosts.get(),
-        builder: (context, snapshot) {
-          if (snapshot.connectionState == ConnectionState.done) {
-            final data = snapshot.data;
-            if (data == null || data.docs.isEmpty) {
-              return const Text('No posts found.');
-            }
-            return Column(
+      body: Column(
+        children: [
+          Padding(
+            padding: const EdgeInsets.all(8.0),
+            child: Row(
+              crossAxisAlignment: CrossAxisAlignment.center,
+              spacing: 15,
               children: [
-                Padding(
-                  padding: const EdgeInsets.all(8.0),
-                  child: Row(
-                    crossAxisAlignment: CrossAxisAlignment.center,
-                    spacing: 15,
-                    children: [
-                      CircleAvatar(
-                        radius: 35,
-                        backgroundImage: NetworkImage(
-                          widget.userData['profilePictureUrl']!,
-                        ),
-                      ),
-                      Padding(
-                        padding: const EdgeInsets.only(bottom:10),
-                        child: Text(
-                          widget.userData['displayName']!,
-                          style: const TextStyle(
-                            fontSize: 18,
-                          ),
-                        ),
-                      ),
-                    ],
+                CircleAvatar(
+                  radius: 35,
+                  backgroundImage: NetworkImage(
+                    widget.userData['profilePictureUrl']!,
                   ),
                 ),
-                Divider(height: 5, thickness: .5,),
-                GridView.builder(
+                Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      widget.userData['displayName']!,
+                      style: const TextStyle(
+                        fontSize: 18,
+                      ),
+                    ),
+                    GestureDetector(
+                      onTap: () async {
+                        if (isFollowed) {
+                          FirebaseFirestore.instance.collection('Users').doc(FirebaseAuth.instance.currentUser!.uid).collection('Following').doc(widget.uid).delete();
+                        } else {
+                          FirebaseFirestore.instance.collection('Users').doc(FirebaseAuth.instance.currentUser!.uid).collection('Following').doc(widget.uid).set({});
+                        }
+                        setState(() {
+                          isFollowed = !(isFollowed);
+                        });
+                      }, 
+                      child: Container(
+                        width: 125,
+                        height: 35,
+                        decoration: BoxDecoration(
+                          color: isFollowed 
+                            ? Color.fromARGB(255, 39, 43, 51)
+                            : Colors.deepPurple,
+                          borderRadius: BorderRadius.circular(10)
+                        ),
+                        child: Center(child: Text((isFollowed) ? 'Followed' : 'Follow'))
+                      )
+                    )
+                  ],
+                ),
+              ],
+            ),
+          ),
+          Divider(height: 5, thickness: .5,),
+          FutureBuilder(
+            future: userPosts,
+            builder: (context, snapshot) {
+              if (snapshot.connectionState == ConnectionState.waiting) {
+                return const Center(child: CircularProgressIndicator());
+              } else if (snapshot.hasError) {
+                return const Center(child: Text('Error loading data'));
+              } else if (snapshot.hasData) {
+                final data = snapshot.data;
+                if (data == null || data.docs.isEmpty) {
+                  return const Text('No posts found.');
+                }
+                return GridView.builder(
                   shrinkWrap: true,
                   physics: const NeverScrollableScrollPhysics(),
                   gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
@@ -78,16 +117,19 @@ class ProfilePageState extends State<ProfilePage> {
                   itemCount: data.docs.length,
                   itemBuilder: (context, index) {
                     final doc = data.docs[index];
+                    postDataCache[doc.id] ??= FirebaseFirestore.instance.collection('Posts').doc(doc.id).get();
                     return FutureBuilder(
-                      future: FirebaseFirestore.instance.collection('Posts').doc(doc.id).get(),
+                      future: postDataCache[doc.id],
                       builder: (context, snapshot) {
                         if (snapshot.connectionState == ConnectionState.waiting) {
                           return const Center(child: CircularProgressIndicator());
                         } else if (snapshot.hasError) {
                           return const Center(child: Text('Error loading data'));
                         } else if (snapshot.hasData) {
-                          final post = snapshot.data!.data();
-                          
+                          final post = (snapshot.data)?.data();
+                          if (post == null){
+                            return Container();
+                          }
                           return GestureDetector(
                             onTap: () {
                               Navigator.push(
@@ -107,7 +149,7 @@ class ProfilePageState extends State<ProfilePage> {
                               );
                             },
                             child: CachedNetworkImage(
-                              imageUrl: 'https://pub-b665727283304785a65fc86be829fa67.r2.dev/${post!['imageDetails'][0]['imageId']}',
+                              imageUrl: 'https://pub-b665727283304785a65fc86be829fa67.r2.dev/${post['imageDetails'][0]['imageId']}',
                               fit: BoxFit.cover,
                               placeholder: (context, url) {
                                 return Center(child: CircularProgressIndicator());
@@ -120,19 +162,16 @@ class ProfilePageState extends State<ProfilePage> {
                       },
                     );
                   },
-                ),
-              ],
-            );
-          } else if (snapshot.hasError) {
-            return Text('Error: ${snapshot.error}');
-          } else {
-            return const CircularProgressIndicator();
-          }
-        },
+                );
+              } else {
+                return const Center(child: Text('No data available'));
+              }
+            },
+          ),
+        ],
       )
     );
   }
-
 }
 
 
