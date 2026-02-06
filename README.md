@@ -1,3 +1,3 @@
 # goober_net
 
-A new Flutter project.
+An instagram-esc app for my personal group and uses
