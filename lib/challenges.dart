@@ -34,13 +34,11 @@ class _ChallengesPageState extends State<ChallengesPage> {
   }
 
   Future<Map<String, Map<String, dynamic>>> _loadAllData() async {
-    QuerySnapshot<Map<String, dynamic>> allChallenges = 
-        await FirebaseFirestore.instance.collection('Challenges').get();
+    QuerySnapshot<Map<String, dynamic>> allChallenges = await FirebaseFirestore.instance.collection('Challenges').get();
 
-    QuerySnapshot<Map<String, dynamic>> userChallengesQuery = 
-        await FirebaseFirestore.instance.collection('Users')
-            .doc(FirebaseAuth.instance.currentUser!.uid)
-            .collection('JoinedChallenges').get();
+    QuerySnapshot<Map<String, dynamic>> userChallengesQuery = await FirebaseFirestore.instance.collection('Users')
+      .doc(FirebaseAuth.instance.currentUser!.uid)
+      .collection('JoinedChallenges').get();
 
     userChallenges = userChallengesQuery.docs.asMap().map((_, doc) {
       return MapEntry(doc.id, doc.data());
@@ -88,42 +86,67 @@ class _ChallengesPageState extends State<ChallengesPage> {
 
         return Padding(
           padding: const EdgeInsets.all(8.0),
-          child: ListView.builder(
-            itemCount: challenges.length,
-            itemBuilder: (context, index) {
-              final challenge = challenges[index];
-              final String challengeId = challenge.key;
-              final Map data = challenge.value;
-              final bool isJoined = userChallenges.containsKey(challengeId);
-
-              return GestureDetector(
-                onTap: () async {
-                  // Wait for the user to return and then refresh the progress icons
-                  await Navigator.push(
-                    context,
-                    MaterialPageRoute(builder: (context) => ChallengeDetails(data: data)),
-                  );
-                  _refreshData();
-                },
-                child: Card(
-                  color: Colors.grey.withValues(alpha: 0.2),
-                  child: Padding(
-                    padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
-                    child: Column(
-                      children: [
-                        _buildHeader(data),
-                        const SizedBox(height: 10),
-                        
-                        // Show Progress bar ONLY if joined, using cached data
-                        if (isJoined) _buildProgressBar(data['name']),
-
-                        _buildActionButtons(challengeId, isJoined),
-                      ],
-                    ),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Padding(
+                padding: const EdgeInsets.symmetric(horizontal: 10),
+                child: Text(
+                  'Global',
+                  style: GoogleFonts.googleSansCode(
+                    fontSize: 16,
                   ),
                 ),
-              );
-            },
+              ),
+              ListView.builder(
+                itemCount: challenges.length,
+                shrinkWrap: true,
+                itemBuilder: (context, index) {
+                  final challenge = challenges[index];
+                  final String challengeId = challenge.key;
+                  final Map data = challenge.value;
+                  final bool isJoined = userChallenges.containsKey(challengeId);
+              
+                  return GestureDetector(
+                    onTap: () async {
+                      // Wait for the user to return and then refresh the progress icons
+                      await Navigator.push(
+                        context,
+                        MaterialPageRoute(builder: (context) => ChallengeDetails(data: data)),
+                      );
+                      _refreshData();
+                    },
+                    child: Card(
+                      color: Colors.grey.withValues(alpha: 0.2),
+                      child: Padding(
+                        padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
+                        child: Column(
+                          children: [
+                            _buildHeader(data),
+                            const SizedBox(height: 10),
+                            
+                            // Show Progress bar ONLY if joined, using cached data
+                            if (isJoined) _buildProgressBar(data['name']),
+              
+                            _buildActionButtons(challengeId, isJoined),
+                          ],
+                        ),
+                      ),
+                    ),
+                  );
+                },
+              ),
+              Padding(
+                padding: const EdgeInsets.symmetric(horizontal: 10),
+                child: Text(
+                  'Custom',
+                  style: GoogleFonts.googleSansCode(
+                    fontSize: 16,
+                  ),
+                ),
+              ),
+            ],
           ),
         );
       },

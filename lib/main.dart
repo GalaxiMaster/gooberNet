@@ -9,6 +9,7 @@ import 'package:firebase_core/firebase_core.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_dotenv/flutter_dotenv.dart';
 import 'package:goober_net/challenges.dart';
+import 'package:goober_net/create_challenge.dart';
 import 'package:goober_net/utils.dart';
 import 'package:goober_net/profile.dart';
 import 'package:goober_net/settings.dart';
@@ -61,7 +62,8 @@ class MyApp extends StatelessWidget {
           backgroundColor: Color.fromARGB(255, 12, 16, 20),
         ),
         colorScheme: ColorScheme.dark()
-      ),      home: const AuthGate(),
+      ),      
+      home: const AuthGate(),
       debugShowCheckedModeBanner: false,
       routes: {
         '/home': (context) => HomePage(),
@@ -112,7 +114,11 @@ class HomePageState extends State<HomePage> {
         index: selectedPageIndex,
         children: _pages,
       ),
-      floatingActionButton: selectedPageIndex == 0 ? createPostFab() : null,
+      floatingActionButton: switch (selectedPageIndex) {
+        0=> createPostFab(),
+        1=> createChallengeFab(),
+        _=> null
+      },
     );
   }
 
@@ -165,6 +171,17 @@ class HomePageState extends State<HomePage> {
         }
         if (!mounted) return;
         postAndUpload(picked, context);
+      },
+      child: Icon(Icons.add),
+    );
+  }
+  Widget createChallengeFab() {
+    return FloatingActionButton(
+      onPressed: () async{
+        Navigator.push(
+          context,
+          MaterialPageRoute(builder: (context) => CreateChallenge())
+        );
       },
       child: Icon(Icons.add),
     );
