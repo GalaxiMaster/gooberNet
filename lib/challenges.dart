@@ -250,29 +250,30 @@ class _ChallengeDetailsState extends State<ChallengeDetails> {
   // Load all saved images from disk
   Future<void> _loadSavedImages() async {
     final path = await localPath;
+    final Map<int, String> loaded = {};
+
     for (int i = 0; i < 9; i++) {
       final file = File('$path/challenge_${widget.data['name']}$i.png');
       if (await file.exists()) {
-        String path = file.path;
-        setState(() {
-          selectedImages[i] = path;
-        });
+        loaded[i] = file.path;
       }
     }
+    if (!mounted) return;
+
+    setState(() {
+      selectedImages = loaded;
+    });
   }
   @override
   initState(){
     super.initState();
     _loadSavedImages();
-    Future.microtask((){
-      if (mounted){
-        precacheImage(
-          const NetworkImage(
-            'https://pbs.twimg.com/media/G95JshnWcAADzN2?format=jpg&name=large',
-          ),
-          context,
-        );
-      }
+    Future.microtask(() {
+      if (!mounted) return;
+      precacheImage(
+        const AssetImage('assets/images/color-hunt-header.jpg'),
+        context,
+      );
     });
   }
   @override
@@ -283,10 +284,10 @@ class _ChallengeDetailsState extends State<ChallengeDetails> {
           SliverAppBar(
             expandedHeight: 120,
             pinned: true,
-            backgroundColor: Colors.white,
+            backgroundColor: Colors.transparent,
             elevation: 0,
             flexibleSpace: FlexibleSpaceBar(
-              background: _HeaderImage(header: widget.data['name'],),
+              background: _HeaderImage(header: widget.data['name']),
             ),
           ),
           SliverToBoxAdapter(
@@ -456,6 +457,7 @@ class _ChallengeDetailsState extends State<ChallengeDetails> {
 
 class _HeaderImage extends StatelessWidget {
   final String header;
+  static const _headerImage = AssetImage('assets/images/color-hunt-header.jpg');
 
   const _HeaderImage({required this.header});
   @override
@@ -463,9 +465,13 @@ class _HeaderImage extends StatelessWidget {
     return Stack(
       fit: StackFit.expand,
       children: [
-        Image.network(
-          'https://pbs.twimg.com/media/G95JshnWcAADzN2?format=jpg&name=large',
-          fit: BoxFit.cover,
+        Container(
+          decoration: BoxDecoration(
+            image: DecorationImage(
+              image: _headerImage,
+              fit: BoxFit.cover,
+            ),
+          ),
         ),
         Positioned(
           bottom: 0,
