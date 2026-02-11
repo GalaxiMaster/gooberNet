@@ -25,7 +25,7 @@ class _ChallengesPageState extends State<ChallengesPage> {
   
   // 2. Local state for quick UI updates
   Map<String, Map<String, dynamic>> userChallenges = {};
-  Map<String, List<int>> _progressCache = {};
+  final Map<String, List<int>> _progressCache = {};
 
   @override
   void initState() {
@@ -130,8 +130,6 @@ class _ChallengesPageState extends State<ChallengesPage> {
     );
   }
 
-  // --- UI SUB-WIDGETS ---
-
   Widget _buildHeader(Map data) {
     Duration timeTillStart = getTimeRemaining(data['startTime'].toDate());
     bool isActive = timeTillStart <= Duration.zero;
@@ -162,7 +160,7 @@ class _ChallengesPageState extends State<ChallengesPage> {
               Text(data['name'], style: const TextStyle(fontSize: 18, fontWeight: FontWeight.bold)),
               Text(data['description'], overflow: TextOverflow.ellipsis, maxLines: 2),
             ],
-          ),
+          ),  
         ),
         _buildChallengeIcon(),
       ],
@@ -240,7 +238,7 @@ class ChallengeDetails extends StatefulWidget {
 }
 
 class _ChallengeDetailsState extends State<ChallengeDetails> {
-  Map<int, Uint8List> selectedImages = {};
+  Map<int, String> selectedImages = {};
 
   // Save image to disk
   Future<void> _persistImage(int index, Uint8List bytes) async {
@@ -255,9 +253,9 @@ class _ChallengeDetailsState extends State<ChallengeDetails> {
     for (int i = 0; i < 9; i++) {
       final file = File('$path/challenge_${widget.data['name']}$i.png');
       if (await file.exists()) {
-        Uint8List bytes = await file.readAsBytes();
+        String path = file.path;
         setState(() {
-          selectedImages[i] = bytes;
+          selectedImages[i] = path;
         });
       }
     }
@@ -266,6 +264,16 @@ class _ChallengeDetailsState extends State<ChallengeDetails> {
   initState(){
     super.initState();
     _loadSavedImages();
+    Future.microtask((){
+      if (mounted){
+        precacheImage(
+          const NetworkImage(
+            'https://pbs.twimg.com/media/G95JshnWcAADzN2?format=jpg&name=large',
+          ),
+          context,
+        );
+      }
+    });
   }
   @override
   Widget build(BuildContext context) {
@@ -344,9 +352,10 @@ class _ChallengeDetailsState extends State<ChallengeDetails> {
                                 return;
                             }
                             Uint8List imageAsBytes = await res.readAsBytes();
+                            String imagePath = res.path;
 
                             setState(() {
-                              selectedImages[index] = imageAsBytes;
+                              selectedImages[index] = imagePath;
                             });
                             await _persistImage(index, imageAsBytes);
                           }
@@ -356,11 +365,13 @@ class _ChallengeDetailsState extends State<ChallengeDetails> {
                           child: Container(
                             decoration: BoxDecoration(color: Colors.blueGrey),
                             child: selectedImages.containsKey(index) 
-                              ? Image.memory(
+                              ? Image.file(
                                 fit: BoxFit.cover,
                                 // width: width, 
                                 // height: height, 
-                                selectedImages[index]!
+                                File(selectedImages[index]!),
+                                gaplessPlayback: true,
+                                cacheWidth: 512,
                               ) 
                               : Icon(Icons.upload),
                           ),
@@ -505,7 +516,7 @@ class _HeaderImage extends StatelessWidget {
 }
 
 Future<File> createNineImageCollageCanvas({
-  required List<Uint8List> images,
+  required List<String> images,
   int tileSize = 512,
   double borderRadius = 15,
   double spacing = 6,
@@ -520,7 +531,7 @@ Future<File> createNineImageCollageCanvas({
 
   for (int i = 0; i < images.length; i++) {
     // Decode image into a GPU-friendly ui.Image
-    final ui.Codec codec = await ui.instantiateImageCodec(images[i]);
+    final ui.Codec codec = await ui.instantiateImageCodec(await File(images[i]).readAsBytes());
     final ui.FrameInfo frame = await codec.getNextFrame();
     final ui.Image uiImg = frame.image;
 
