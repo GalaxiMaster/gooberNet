@@ -74,3 +74,25 @@ Color hexToColor(String hex) {
   }
   return Color(int.parse(hex, radix: 16));
 }
+
+String smartColorName(Color color) {
+  final hsl = HSLColor.fromColor(color);
+  final hue = hsl.hue;
+  final lightness = hsl.lightness;
+  final saturation = hsl.saturation;
+
+  if (lightness < 0.15) return "Black";
+  if (lightness > 0.90) return "White";
+  if (saturation < 0.15) return "Gray";
+
+  if (hue < 15 || hue >= 345) return "Red";
+  if (hue < 40) return "Orange";
+  if (hue < 65) return "Yellow";
+  if (hue < 150) return "Green";
+  if (hue < 200) return "Teal";
+  if (hue < 250) return "Blue";
+  if (hue < 290) return "Purple";
+  if (hue < 345) return "Pink";
+
+  return "Custom";
+}
