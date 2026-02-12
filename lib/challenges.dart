@@ -1,4 +1,3 @@
-import 'package:cached_network_image/cached_network_image.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:flutter/material.dart';
@@ -20,11 +19,8 @@ class ChallengesPage extends StatefulWidget {
 }
 
 class _ChallengesPageState extends State<ChallengesPage> {
-  // 1. Store the Future to prevent re-triggering on every rebuild
   late Future<Map<String, Map<String, dynamic>>> _challengesFuture;
-  
-  // 2. Local state for quick UI updates
-  Map<String, Map<String, dynamic>> userChallenges = {};
+    Map<String, Map<String, dynamic>> userChallenges = {};
   final Map<String, List<int>> _progressCache = {};
 
   @override
@@ -137,6 +133,7 @@ class _ChallengesPageState extends State<ChallengesPage> {
                   );
                 },
               ),
+              SizedBox(height: 10,),
               Padding(
                 padding: const EdgeInsets.symmetric(horizontal: 10),
                 child: Text(
@@ -246,8 +243,7 @@ class _ChallengesPageState extends State<ChallengesPage> {
   Widget _buildChallengeIcon() {
     return Container(
       width: 70, height: 70,
-      decoration: BoxDecoration(color: Colors.deepPurpleAccent, borderRadius: BorderRadius.circular(40)),
-      child: ClipOval(child: CachedNetworkImage(imageUrl: 'https://pbs.twimg.com/media/G95JshnWcAADzN2?format=jpg&name=large')),
+      decoration: BoxDecoration(color: Colors.deepPurpleAccent, borderRadius: BorderRadius.circular(40), image: DecorationImage(image: AssetImage('assets/images/color-hunt-header.jpg'))),
     );
   }
 }
