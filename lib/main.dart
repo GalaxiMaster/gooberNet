@@ -178,10 +178,16 @@ class HomePageState extends State<HomePage> {
   Widget createChallengeFab() {
     return FloatingActionButton(
       onPressed: () async{
-        Navigator.push(
+        Map<String, dynamic>? res = await Navigator.push(
           context,
           MaterialPageRoute(builder: (context) => CreateChallenge())
         );
+        if (res != null) {
+          User? currentUser = FirebaseAuth.instance.currentUser;
+          if (currentUser == null) return;
+
+          FirebaseFirestore.instance.collection('Users').doc(currentUser.uid).collection('CustomChallenges').doc().set(res);
+        }
       },
       child: Icon(Icons.add),
     );

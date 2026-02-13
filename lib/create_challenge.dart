@@ -32,8 +32,8 @@ class ChallengeTypeConfig {
 }
 
 final Map<String, ChallengeTypeConfig> challengeTypes = {
-  "Single-Color Hunt": ChallengeTypeConfig(
-    id: "Single-Color Hunt",
+  "SingleColorGrid": ChallengeTypeConfig(
+    id: "SingleColorGrid",
     displayName: "Single-Color Hunt",
     icon: Icons.palette,
 
@@ -102,7 +102,7 @@ class CreateChallenge extends StatefulWidget {
 class _CreateChallengeState extends State<CreateChallenge> {
   final PageController _pageController = PageController(viewportFraction: 0.90);
 
-  String selectedType = "Single-Color Hunt";
+  String selectedType = "SingleColorGrid";
   String gridSize = "3x3";
 
   Color selectedColor = Colors.red;
@@ -145,8 +145,7 @@ class _CreateChallengeState extends State<CreateChallenge> {
         gridSize: gridSize,
       );
 
-  String get colorHex =>
-      '#${selectedColor.value.toRadixString(16).substring(2).toUpperCase()}';
+  String get colorHex => '#${selectedColor.value.toRadixString(16).substring(2).toUpperCase()}';
 
   String smartColorName(Color color) {
     final hsl = HSLColor.fromColor(color);
@@ -206,11 +205,14 @@ class _CreateChallengeState extends State<CreateChallenge> {
   void submitChallenge() {
     Navigator.pop(context, {
       "type": selectedType,
-      "title": autoTitle,
+      "name": autoTitle,
       "description": autoDescription,
-      "colorName": colorName,
-      "colorHex": colorHex,
       "gridSize": gridSize,
+      "ruleSet": '$selectedType$gridSize',
+      "target": {
+        "colorName": colorName,
+        "hexApprox": colorHex,
+      }
     });
   }
 
@@ -433,9 +435,8 @@ class _CreateChallengeState extends State<CreateChallenge> {
 
             const SizedBox(height: 20),
 
-            if (selectedType == "Single-Color Hunt") ...[
-              Text("Grid Size",
-                  style: Theme.of(context).textTheme.titleMedium),
+            if (selectedType == "SingleColorGrid") ...[
+              Text("Grid Size", style: Theme.of(context).textTheme.titleMedium),
               const SizedBox(height: 10),
 
               Wrap(

@@ -19,8 +19,11 @@ class ChallengesPage extends StatefulWidget {
 }
 
 class _ChallengesPageState extends State<ChallengesPage> {
-  late Future<Map<String, Map<String, dynamic>>> _challengesFuture;
-    Map<String, Map<String, dynamic>> userChallenges = {};
+  late Future<bool> _challengesFuture;
+  Map<String, Map<String, dynamic>> userChallenges = {};
+  Map<String, Map<String, dynamic>> allChallenges = {};
+  Map<String, Map<String, dynamic>> customChallenges = {};
+
   final Map<String, List<int>> _progressCache = {};
 
   @override
@@ -29,8 +32,12 @@ class _ChallengesPageState extends State<ChallengesPage> {
     _challengesFuture = _loadAllData();
   }
 
-  Future<Map<String, Map<String, dynamic>>> _loadAllData() async {
-    QuerySnapshot<Map<String, dynamic>> allChallenges = await FirebaseFirestore.instance.collection('Challenges').get();
+  Future<bool> _loadAllData() async {
+    QuerySnapshot<Map<String, dynamic>> allChallengesQuery = await FirebaseFirestore.instance.collection('Challenges').get();
+
+    allChallenges = allChallengesQuery.docs.asMap().map((_, doc) {
+      return MapEntry(doc.id, doc.data());
+    });
 
     QuerySnapshot<Map<String, dynamic>> userChallengesQuery = await FirebaseFirestore.instance.collection('Users')
       .doc(FirebaseAuth.instance.currentUser!.uid)
@@ -40,20 +47,27 @@ class _ChallengesPageState extends State<ChallengesPage> {
       return MapEntry(doc.id, doc.data());
     });
 
+    QuerySnapshot<Map<String, dynamic>> userCustomChallengesQuery = await FirebaseFirestore.instance.collection('Users')
+      .doc(FirebaseAuth.instance.currentUser!.uid)
+      .collection('CustomChallenges').get();
+
+    customChallenges = userCustomChallengesQuery.docs.asMap().map((_, doc) {
+      return MapEntry(doc.id, doc.data());
+    });
+
     final directory = await getApplicationDocumentsDirectory();
     final path = directory.path;
 
-    for (var doc in allChallenges.docs) {
-      String challengeName = doc.data()['name'] ?? "";
+    for (var doc in [...allChallengesQuery.docs, ...userCustomChallengesQuery.docs]) {
+      String challengeId = doc.id;
       int count = 0;
       for (int i = 0; i < 9; i++) {
-        final file = File('$path/challenge_$challengeName$i.png');
+        final file = File('$path/challenge_$challengeId$i.png');
         if (await file.exists()) count++;
       }
-      _progressCache[challengeName] = [count, 9];
+      _progressCache[challengeId] = [count, 9];
     }
-
-    return allChallenges.docs.asMap().map((_, doc) => MapEntry(doc.id, doc.data()));
+    return true;
   }
 
   Duration getTimeRemaining(DateTime startTime) {
@@ -69,7 +83,7 @@ class _ChallengesPageState extends State<ChallengesPage> {
 
   @override
   Widget build(BuildContext context) {
-    return FutureBuilder<Map<String, Map<String, dynamic>>>(
+    return FutureBuilder<bool>(
       future: _challengesFuture,
       builder: (context, snapshot) {
         if (snapshot.connectionState == ConnectionState.waiting) {
@@ -77,9 +91,6 @@ class _ChallengesPageState extends State<ChallengesPage> {
         } else if (snapshot.hasError) {
           return const Center(child: Text('Error loading challenges'));
         }
-
-        final challenges = snapshot.data!.entries.toList();
-
         return Padding(
           padding: const EdgeInsets.all(8.0),
           child: Column(
@@ -96,22 +107,21 @@ class _ChallengesPageState extends State<ChallengesPage> {
                 ),
               ),
               ListView.builder(
-                itemCount: challenges.length,
+                itemCount: allChallenges.length,
                 shrinkWrap: true,
                 itemBuilder: (context, index) {
-                  final challenge = challenges[index];
+                  final challenge = allChallenges.entries.toList()[index];
                   final String challengeId = challenge.key;
                   final Map data = challenge.value;
-                  final bool isJoined = userChallenges.containsKey(challengeId);
+                  final bool isJoined = allChallenges.containsKey(challengeId);
               
                   return GestureDetector(
                     onTap: () async {
-                      // Wait for the user to return and then refresh the progress icons
                       await Navigator.push(
                         context,
-                        MaterialPageRoute(builder: (context) => ChallengeDetails(data: data)),
+                        MaterialPageRoute(builder: (context) => ChallengeDetails(data: data, challengeId: challenge.key)),
                       );
-                      _refreshData();
+                      _refreshData(); // TODO FIX
                     },
                     child: Card(
                       color: Colors.grey.withValues(alpha: 0.2),
@@ -123,7 +133,7 @@ class _ChallengesPageState extends State<ChallengesPage> {
                             const SizedBox(height: 10),
                             
                             // Show Progress bar ONLY if joined, using cached data
-                            if (isJoined) _buildProgressBar(data['name']),
+                            if (isJoined) _buildProgressBar(challenge.key),
               
                             _buildActionButtons(challengeId, isJoined),
                           ],
@@ -142,6 +152,52 @@ class _ChallengesPageState extends State<ChallengesPage> {
                     fontSize: 16,
                   ),
                 ),
+              ),
+              ListView.builder(
+                itemCount: customChallenges.length,
+                shrinkWrap: true,
+                itemBuilder: (context, index) {
+                  final challenge = customChallenges.entries.toList()[index];
+                  final Map data = challenge.value;
+              
+                  return GestureDetector(
+                    onTap: () async {
+                      // Wait for the user to return and then refresh the progress icons
+                      await Navigator.push(
+                        context,
+                        MaterialPageRoute(builder: (context) => ChallengeDetails(data: data, challengeId: challenge.key,)),
+                      );
+                      _refreshData();
+                    },
+                    child: Card(
+                      color: Colors.grey.withValues(alpha: 0.2),
+                      child: Padding(
+                        padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
+                        child: Column(
+                          children: [
+                            Row(
+                              crossAxisAlignment: CrossAxisAlignment.start,
+                              children: [
+                                Expanded(
+                                  child: Column(
+                                    crossAxisAlignment: CrossAxisAlignment.start,
+                                    children: [
+                                      Text(data['name'], style: const TextStyle(fontSize: 18, fontWeight: FontWeight.bold)),
+                                      Text(data['description'], overflow: TextOverflow.ellipsis, maxLines: 2),
+                                    ],
+                                  ),  
+                                ),
+                                _buildChallengeIcon(),
+                              ],
+                            ),
+                            const SizedBox(height: 10),
+                            _buildProgressBar(challenge.key),
+                          ],
+                        ),
+                      ),
+                    ),
+                  );
+                },
               ),
             ],
           ),
@@ -187,8 +243,8 @@ class _ChallengesPageState extends State<ChallengesPage> {
     );
   }
 
-  Widget _buildProgressBar(String name) {
-    final progress = _progressCache[name] ?? [0, 9];
+  Widget _buildProgressBar(String id) {
+    final progress = _progressCache[id] ?? [0, 9];
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
@@ -250,7 +306,8 @@ class _ChallengesPageState extends State<ChallengesPage> {
 
 class ChallengeDetails extends StatefulWidget {
   final Map data;
-  const ChallengeDetails({super.key, required this.data});
+  final String challengeId;
+  const ChallengeDetails({super.key, required this.data, required this.challengeId});
   @override
   // ignore: library_private_types_in_public_api
   _ChallengeDetailsState createState() => _ChallengeDetailsState();
@@ -262,7 +319,7 @@ class _ChallengeDetailsState extends State<ChallengeDetails> {
   // Save image to disk
   Future<void> _persistImage(int index, Uint8List bytes) async {
     final path = await localPath;
-    final file = File('$path/challenge_${widget.data['name']}$index.png');
+    final file = File('$path/challenge_${widget.challengeId}$index.png');
     await file.writeAsBytes(bytes);
   }
 
@@ -272,7 +329,7 @@ class _ChallengeDetailsState extends State<ChallengeDetails> {
     final Map<int, String> loaded = {};
 
     for (int i = 0; i < 9; i++) {
-      final file = File('$path/challenge_${widget.data['name']}$i.png');
+      final file = File('$path/challenge_${widget.challengeId}$i.png');
       if (await file.exists()) {
         loaded[i] = file.path;
       }
