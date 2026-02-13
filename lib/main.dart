@@ -8,25 +8,30 @@ import 'package:firebase_auth/firebase_auth.dart';
 import 'package:firebase_core/firebase_core.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_dotenv/flutter_dotenv.dart';
+import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:goober_net/challenges.dart';
 import 'package:goober_net/create_challenge.dart';
 import 'package:goober_net/utils.dart';
 import 'package:goober_net/profile.dart';
 import 'package:goober_net/settings.dart';
 import 'package:goober_net/sign_in_page.dart';
+import 'package:hive_flutter/adapters.dart';
 import 'package:image_picker/image_picker.dart';
 import 'package:photo_view/photo_view.dart';
 
 void main() async{
   WidgetsFlutterBinding.ensureInitialized();
+  await Hive.initFlutter();
   await Firebase.initializeApp();
   await dotenv.load();
+
   await CloudFlareR2.init(
     accountId: dotenv.get('accountId'),
     accessKeyId: dotenv.get('accessKeyId'),
     secretAccessKey: dotenv.get('secretAccessKey'),
   );
-  runApp(const MyApp());
+  
+  runApp(ProviderScope(child: const MyApp()));
 }
 
 class AuthGate extends StatelessWidget {
