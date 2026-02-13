@@ -2,6 +2,7 @@ import 'dart:async';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:goober_net/models.dart';
+import 'package:goober_net/utils.dart';
 import 'package:hive/hive.dart';
 
 const globalBoxName = 'global_challenges';
@@ -33,7 +34,7 @@ class ChallengesRepository {
         .snapshots()
         .listen((snapshot) async {
       for (final doc in snapshot.docs) {
-        await _globalBox.put(doc.id, doc.data());
+        await _globalBox.put(doc.id, hiveSafe(doc.data()));
       }
     });
   }
@@ -47,7 +48,7 @@ class ChallengesRepository {
         .snapshots()
         .listen((snapshot) async {
       for (final doc in snapshot.docs) {
-        await _userBox.put(doc.id, doc.data());
+        await _userBox.put(doc.id, hiveSafe(doc.data()));
       }
     });
   }
@@ -88,10 +89,23 @@ class ChallengesRepository {
     _globalSub?.cancel();
     _userSub?.cancel();
   }
+  
+  Future<void> addUserChallenge(Map<String, dynamic> data) async {
+    final docRef = _firestore
+        .collection('Users')
+        .doc(userId)
+        .collection('CustomChallenges')
+        .doc(); // Auto Gen Id
+
+    final autoId = docRef.id;
+
+    await docRef.set(data);
+
+    await _userBox.put(autoId, hiveSafe(data));
+  }
 }
 
-final repositoryProvider =
-    FutureProvider.family<ChallengesRepository, String>((ref, userId) async {
+final repositoryProvider = FutureProvider.family<ChallengesRepository, String>((ref, userId) async {
   final repo = ChallengesRepository(userId);
   await repo.init();
   ref.onDispose(repo.dispose);

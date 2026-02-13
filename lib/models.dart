@@ -1,22 +1,22 @@
 class Challenge {
   final String id;
-  final String title;
+  final Map data;
 
   Challenge({
     required this.id,
-    required this.title,
+    required this.data,
   });
 
   factory Challenge.fromMap(String id, Map<String, dynamic> data) {
     return Challenge(
       id: id,
-      title: data['title'] ?? '',
+      data: data,
     );
   }
 
   Map<String, dynamic> toMap() {
     return {
-      'title': title,
+      ...data,
     };
   }
 }

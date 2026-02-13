@@ -96,3 +96,31 @@ String smartColorName(Color color) {
 
   return "Custom";
 }
+
+dynamic hiveSafe(dynamic value) {
+  // Firestore Timestamp → DateTime
+  if (value is Timestamp || value is DateTime) {
+    return parseDate(value);
+  }
+
+  // Map (recursive)
+  if (value is Map) {
+    return value.map(
+      (key, val) => MapEntry(key, hiveSafe(val)),
+    );
+  }
+
+  // List (recursive)
+  if (value is List) {
+    return value.map(hiveSafe).toList();
+  }
+
+  // Primitives
+  return value;
+}
+
+DateTime parseDate(dynamic value) {
+  if (value is Timestamp) return value.toDate();
+  if (value is DateTime) return value;
+  throw Exception('Unsupported date type: ${value.runtimeType}');
+}

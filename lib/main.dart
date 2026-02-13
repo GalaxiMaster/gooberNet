@@ -1,5 +1,4 @@
 import 'dart:async';
-import 'dart:ui';
 import 'dart:ui' as ui;
 import 'package:cached_network_image/cached_network_image.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
@@ -11,6 +10,7 @@ import 'package:flutter_dotenv/flutter_dotenv.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:goober_net/challenges.dart';
 import 'package:goober_net/create_challenge.dart';
+import 'package:goober_net/providers.dart';
 import 'package:goober_net/utils.dart';
 import 'package:goober_net/profile.dart';
 import 'package:goober_net/settings.dart';
@@ -78,13 +78,13 @@ class MyApp extends StatelessWidget {
   }
 }
 
-class HomePage extends StatefulWidget {
+class HomePage extends ConsumerStatefulWidget {
   const HomePage({super.key});
   @override
   HomePageState createState() => HomePageState();
 }
 
-class HomePageState extends State<HomePage> {
+class HomePageState extends ConsumerState<HomePage> {
   int selectedPageIndex = 0;
   final posts = FirebaseFirestore.instance.collection('Posts').orderBy('postDate', descending: true); 
   final likes = FirebaseFirestore.instance.collection('Likes');
@@ -191,7 +191,9 @@ class HomePageState extends State<HomePage> {
           User? currentUser = FirebaseAuth.instance.currentUser;
           if (currentUser == null) return;
 
-          FirebaseFirestore.instance.collection('Users').doc(currentUser.uid).collection('CustomChallenges').doc().set(res);
+          final repo = await ref.watch(repositoryProvider(currentUser.uid).future);
+          await repo.addUserChallenge(res);
+
         }
       },
       child: Icon(Icons.add),
@@ -233,7 +235,7 @@ class _HomeFeedPageState extends State<HomeFeedPage> {
           final docs = snapshot.data!.docs;
       
           return ListView(
-            cacheExtent: 1000,
+            cacheExtent: 10,
             children: docs.map((d) => PostTemplate(postData: d.data() as Map<dynamic, dynamic>, favorited: likes.doc(d.id), postId: d.id)).toList(),
           );
         },
@@ -696,7 +698,7 @@ class ImageOverlay {
           children: [
             Positioned.fill(
               child: BackdropFilter(
-                filter: ImageFilter.blur(sigmaX: 10, sigmaY: 10),
+                filter: ui.ImageFilter.blur(sigmaX: 10, sigmaY: 10),
                 child: Container(
                   color: Colors.black.withOpacity(0.4),
                 ),

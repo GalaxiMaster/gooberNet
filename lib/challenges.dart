@@ -1,6 +1,9 @@
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:flutter/material.dart';
+import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:goober_net/models.dart';
+import 'package:goober_net/providers.dart';
 import 'package:goober_net/utils.dart';
 import 'package:goober_net/widgets.dart';
 import 'package:google_fonts/google_fonts.dart';
@@ -11,203 +14,152 @@ import 'package:path_provider/path_provider.dart';
 import 'dart:ui' as ui;
 import 'package:share_plus/share_plus.dart';
 
-class ChallengesPage extends StatefulWidget {
+class ChallengesPage extends ConsumerStatefulWidget {
   const ChallengesPage({super.key});
   @override
   // ignore: library_private_types_in_public_api
   _ChallengesPageState createState() => _ChallengesPageState();
 }
 
-class _ChallengesPageState extends State<ChallengesPage> {
-  late Future<bool> _challengesFuture;
+class _ChallengesPageState extends ConsumerState<ChallengesPage> {
   Map<String, Map<String, dynamic>> userChallenges = {};
-  Map<String, Map<String, dynamic>> allChallenges = {};
-  Map<String, Map<String, dynamic>> customChallenges = {};
 
   final Map<String, List<int>> _progressCache = {};
 
-  @override
-  void initState() {
-    super.initState();
-    _challengesFuture = _loadAllData();
-  }
-
-  Future<bool> _loadAllData() async {
-    QuerySnapshot<Map<String, dynamic>> allChallengesQuery = await FirebaseFirestore.instance.collection('Challenges').get();
-
-    allChallenges = allChallengesQuery.docs.asMap().map((_, doc) {
-      return MapEntry(doc.id, doc.data());
-    });
-
-    QuerySnapshot<Map<String, dynamic>> userChallengesQuery = await FirebaseFirestore.instance.collection('Users')
-      .doc(FirebaseAuth.instance.currentUser!.uid)
-      .collection('JoinedChallenges').get();
-
-    userChallenges = userChallengesQuery.docs.asMap().map((_, doc) {
-      return MapEntry(doc.id, doc.data());
-    });
-
-    QuerySnapshot<Map<String, dynamic>> userCustomChallengesQuery = await FirebaseFirestore.instance.collection('Users')
-      .doc(FirebaseAuth.instance.currentUser!.uid)
-      .collection('CustomChallenges').get();
-
-    customChallenges = userCustomChallengesQuery.docs.asMap().map((_, doc) {
-      return MapEntry(doc.id, doc.data());
-    });
-
-    final directory = await getApplicationDocumentsDirectory();
-    final path = directory.path;
-
-    for (var doc in [...allChallengesQuery.docs, ...userCustomChallengesQuery.docs]) {
-      String challengeId = doc.id;
-      int count = 0;
-      for (int i = 0; i < 9; i++) {
-        final file = File('$path/challenge_$challengeId$i.png');
-        if (await file.exists()) count++;
-      }
-      _progressCache[challengeId] = [count, 9];
-    }
-    return true;
-  }
 
   Duration getTimeRemaining(DateTime startTime) {
     DateTime now = DateTime.now();
     return startTime.difference(now);
   }
 
-  void _refreshData() {
-    setState(() {
-      _challengesFuture = _loadAllData();
-    });
-  }
-
   @override
   Widget build(BuildContext context) {
-    return FutureBuilder<bool>(
-      future: _challengesFuture,
-      builder: (context, snapshot) {
-        if (snapshot.connectionState == ConnectionState.waiting) {
-          return const Center(child: CircularProgressIndicator());
-        } else if (snapshot.hasError) {
-          return const Center(child: Text('Error loading challenges'));
-        }
-        return Padding(
-          padding: const EdgeInsets.all(8.0),
-          child: Column(
-            mainAxisSize: MainAxisSize.min,
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              Padding(
-                padding: const EdgeInsets.symmetric(horizontal: 10),
-                child: Text(
-                  'Global',
-                  style: GoogleFonts.googleSansCode(
-                    fontSize: 16,
-                  ),
+    final allChallengesAsync = ref.watch(globalChallengesProvider(FirebaseAuth.instance.currentUser!.uid));
+    final customChallengesAsync = ref.watch(userChallengesProvider(FirebaseAuth.instance.currentUser!.uid));
+    return Padding(
+      padding: const EdgeInsets.all(8.0),
+      child: SingleChildScrollView(
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Padding(
+              padding: const EdgeInsets.symmetric(horizontal: 10),
+              child: Text(
+                'Global',
+                style: GoogleFonts.googleSansCode(
+                  fontSize: 16,
                 ),
               ),
-              ListView.builder(
-                itemCount: allChallenges.length,
-                shrinkWrap: true,
-                itemBuilder: (context, index) {
-                  final challenge = allChallenges.entries.toList()[index];
-                  final String challengeId = challenge.key;
-                  final Map data = challenge.value;
-                  final bool isJoined = allChallenges.containsKey(challengeId);
-              
-                  return GestureDetector(
-                    onTap: () async {
-                      await Navigator.push(
+            ),
+            allChallengesAsync.when(
+              data: (allChallenges) {
+                return ListView.builder(
+                  itemCount: allChallenges.length,
+                  shrinkWrap: true,
+                  physics: NeverScrollableScrollPhysics(),
+                  itemBuilder: (context, index) {
+                    final challenge = allChallenges.entries.toList()[index];
+                    final String challengeId = challenge.key;
+                    final Challenge data = challenge.value;
+                    final bool isJoined = userChallenges.containsKey(challengeId);
+                
+                    return GestureDetector(
+                      onTap: () => Navigator.push(
                         context,
-                        MaterialPageRoute(builder: (context) => ChallengeDetails(data: data, challengeId: challenge.key)),
-                      );
-                      _refreshData(); // TODO FIX
-                    },
-                    child: Card(
-                      color: Colors.grey.withValues(alpha: 0.2),
-                      child: Padding(
-                        padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
-                        child: Column(
-                          children: [
-                            _buildHeader(data),
-                            const SizedBox(height: 10),
-                            
-                            // Show Progress bar ONLY if joined, using cached data
-                            if (isJoined) _buildProgressBar(challenge.key),
-              
-                            _buildActionButtons(challengeId, isJoined),
-                          ],
+                        MaterialPageRoute(builder: (context) => ChallengeDetails(data: data.toMap(), challengeId: challenge.key)),
+                      ),
+                      child: Card(
+                        color: Colors.grey.withValues(alpha: 0.2),
+                        child: Padding(
+                          padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
+                          child: Column(
+                            children: [
+                              _buildHeader(data.toMap()),
+                              const SizedBox(height: 10),
+                              
+                              // Show Progress bar ONLY if joined, using cached data
+                              if (isJoined) _buildProgressBar(challenge.key),
+                
+                              _buildActionButtons(challengeId, isJoined),
+                            ],
+                          ),
                         ),
                       ),
-                    ),
-                  );
-                },
-              ),
-              SizedBox(height: 10,),
-              Padding(
-                padding: const EdgeInsets.symmetric(horizontal: 10),
-                child: Text(
-                  'Custom',
-                  style: GoogleFonts.googleSansCode(
-                    fontSize: 16,
-                  ),
+                    );
+                  },
+                );
+              }, 
+              error: (error, trace) => Text('Failed to get data. Error: $error'), 
+              loading: ()=> CircularProgressIndicator()
+            ),
+            SizedBox(height: 10,),
+            Padding(
+              padding: const EdgeInsets.symmetric(horizontal: 10),
+              child: Text(
+                'Custom',
+                style: GoogleFonts.googleSansCode(
+                  fontSize: 16,
                 ),
               ),
-              ListView.builder(
-                itemCount: customChallenges.length,
-                shrinkWrap: true,
-                itemBuilder: (context, index) {
-                  final challenge = customChallenges.entries.toList()[index];
-                  final Map data = challenge.value;
-              
-                  return GestureDetector(
-                    onTap: () async {
-                      // Wait for the user to return and then refresh the progress icons
-                      await Navigator.push(
+            ),
+            customChallengesAsync.when(
+              data: (customChallenges) {
+                return ListView.builder(
+                  itemCount: customChallenges.length,
+                  shrinkWrap: true,
+                  physics: NeverScrollableScrollPhysics(),
+                  itemBuilder: (context, index) {
+                    final challenge = customChallenges.entries.toList()[index];
+                    final Map data = challenge.value.toMap();
+                
+                    return GestureDetector(
+                      onTap: () => Navigator.push(
                         context,
                         MaterialPageRoute(builder: (context) => ChallengeDetails(data: data, challengeId: challenge.key,)),
-                      );
-                      _refreshData();
-                    },
-                    child: Card(
-                      color: Colors.grey.withValues(alpha: 0.2),
-                      child: Padding(
-                        padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
-                        child: Column(
-                          children: [
-                            Row(
-                              crossAxisAlignment: CrossAxisAlignment.start,
-                              children: [
-                                Expanded(
-                                  child: Column(
-                                    crossAxisAlignment: CrossAxisAlignment.start,
-                                    children: [
-                                      Text(data['name'], style: const TextStyle(fontSize: 18, fontWeight: FontWeight.bold)),
-                                      Text(data['description'], overflow: TextOverflow.ellipsis, maxLines: 2),
-                                    ],
-                                  ),  
-                                ),
-                                _buildChallengeIcon(),
-                              ],
-                            ),
-                            const SizedBox(height: 10),
-                            _buildProgressBar(challenge.key),
-                          ],
+                      ),
+                      child: Card(
+                        color: Colors.grey.withValues(alpha: 0.2),
+                        child: Padding(
+                          padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
+                          child: Column(
+                            children: [
+                              Row(
+                                crossAxisAlignment: CrossAxisAlignment.start,
+                                children: [
+                                  Expanded(
+                                    child: Column(
+                                      crossAxisAlignment: CrossAxisAlignment.start,
+                                      children: [
+                                        Text(data['name'], style: const TextStyle(fontSize: 18, fontWeight: FontWeight.bold)),
+                                        Text(data['description'], overflow: TextOverflow.ellipsis, maxLines: 2),
+                                      ],
+                                    ),  
+                                  ),
+                                  _buildChallengeIcon(),
+                                ],
+                              ),
+                              const SizedBox(height: 10),
+                              _buildProgressBar(challenge.key),
+                            ],
+                          ),
                         ),
                       ),
-                    ),
-                  );
-                },
-              ),
-            ],
-          ),
-        );
-      },
+                    );
+                  },
+                );
+              }, 
+              error: (error, trace) => Text('Failed to get data. Error: $error'), 
+              loading: ()=> CircularProgressIndicator()
+            ),
+          ],
+        ),
+      ),
     );
   }
 
   Widget _buildHeader(Map data) {
-    Duration timeTillStart = getTimeRemaining(data['startTime'].toDate());
+    Duration timeTillStart = getTimeRemaining(parseDate(data['startTime']));
     bool isActive = timeTillStart <= Duration.zero;
 
     return Row(
@@ -254,7 +206,7 @@ class _ChallengesPageState extends State<ChallengesPage> {
           value: progress[0] / progress[1],
           borderRadius: BorderRadius.circular(40),
           minHeight: 12,
-          backgroundColor: const Color.fromARGB(255, 40, 44, 52),
+          backgroundColor: const Color.fromARGB(255, 59, 65, 77),
           valueColor: const AlwaysStoppedAnimation<Color>(Colors.green),
         ),
         const SizedBox(height: 15),
