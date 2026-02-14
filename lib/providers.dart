@@ -1,4 +1,6 @@
 import 'dart:async';
+import 'dart:io';
+import 'package:async/async.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:goober_net/models.dart';
@@ -14,18 +16,27 @@ class ChallengesRepository {
 
   late Box _globalBox;
   late Box _userBox;
+  late Box _progressBox;
+  late Box _userJoinsBox;
 
   StreamSubscription? _globalSub;
   StreamSubscription? _userSub;
+  StreamSubscription? _joinsSub;
+
+  StreamController<void>? _progressUpdateController;
 
   ChallengesRepository(this.userId);
 
   Future<void> init() async {
     _globalBox = await Hive.openBox(globalBoxName);
     _userBox = await Hive.openBox('$userBoxPrefix$userId');
+    _progressBox = await Hive.openBox('progress_$userId');
+    _userJoinsBox = await Hive.openBox('Joined_$userBoxPrefix$userId');
 
     _listenToFirestoreGlobal();
     _listenToFirestoreUser();
+    _listenToFirestoreUserJoins();
+    await _validateProgressCache();
   }
 
   void _listenToFirestoreGlobal() {
@@ -39,7 +50,6 @@ class ChallengesRepository {
     });
   }
 
-
   void _listenToFirestoreUser() {
     _userSub = _firestore
         .collection('Users')
@@ -52,42 +62,87 @@ class ChallengesRepository {
       }
     });
   }
+  
+  void _listenToFirestoreUserJoins() {
+    _joinsSub = _firestore
+        .collection('Users')
+        .doc(userId)
+        .collection('JoinedChallenges')
+        .snapshots()
+        .listen((snapshot) async {
+      final firestoreIds = snapshot.docs.map((d) => d.id).toSet();
 
-  Stream<Map<String, Challenge>> watchGlobal() async* {
-    yield _readGlobal();
+      for (final doc in snapshot.docs) {
+        await _userJoinsBox.put(doc.id, hiveSafe(doc.data()));
+      }
 
-    yield* _globalBox.watch().map((_) => _readGlobal());
+      final hiveKeys = _userJoinsBox.keys.cast<String>().toSet();
+      final toDelete = hiveKeys.difference(firestoreIds);
+      for (final key in toDelete) {
+        await _userJoinsBox.delete(key);
+      }
+    });
   }
 
-  Map<String, Challenge> _readGlobal() {
-    return {
-      for (final key in _globalBox.keys)
-        key: Challenge.fromMap(
-          key,
-          Map<String, dynamic>.from(_globalBox.get(key)),
-        ),
-    };
-  }
 
-  Stream<Map<String, Challenge>> watchUser() async* {
-    yield _readUser();
-
-    yield* _userBox.watch().map((_) => _readUser());
-  }
-
-  Map<String, Challenge> _readUser() {
+  Map<String, Challenge> _readUserWithProgress() {
     return {
       for (final key in _userBox.keys)
         key: Challenge.fromMap(
           key,
           Map<String, dynamic>.from(_userBox.get(key)),
+          progress: List.from(_progressBox.get(key, defaultValue: [[], 9])),
         ),
     };
+  }
+  
+  Stream<Map<String, Challenge>> watchUserWithProgress() async* {
+    yield _readUserWithProgress();
+
+    yield* StreamGroup.merge([
+      _userBox.watch(),
+      _progressBox.watch(), // Reacts to progress changes
+    ]).map(
+      (_) => _readUserWithProgress()
+    );
+  }
+  
+  Stream<Map<String, Challenge>> watchGlobalWithProgress() async* {
+    yield _readGlobalWithProgress();
+
+    yield* StreamGroup.merge([
+      _globalBox.watch(),
+      _progressBox.watch(), // Reacts to progress changes
+    ]).map(
+      (_) => _readGlobalWithProgress()
+    );
+  }
+
+  Map<String, Challenge> _readGlobalWithProgress() {
+    return {
+      for (final key in _globalBox.keys)
+        key: Challenge.fromMap(
+          key,
+          Map<String, dynamic>.from(_globalBox.get(key)),
+          progress: List.from(_progressBox.get(key, defaultValue: [[], 9])),
+        ),
+    };
+  }
+  
+  Stream<Map> watchJoins() async* {
+    yield _readJoins();
+
+    yield* _userJoinsBox.watch().map((_) => _readJoins());
+  }
+
+  Map _readJoins() {
+    return _userJoinsBox.toMap();
   }
 
   void dispose() {
     _globalSub?.cancel();
     _userSub?.cancel();
+    _joinsSub?.cancel();
   }
   
   Future<void> addUserChallenge(Map<String, dynamic> data) async {
@@ -103,6 +158,47 @@ class ChallengesRepository {
 
     await _userBox.put(autoId, hiveSafe(data));
   }
+  
+  Future<void> recordImageAdded(String challengeId, int imageIndex) async {
+    final current = _progressBox.get(challengeId, defaultValue: [[], 9]) as List;
+    List progress = current.first;
+    if (progress.at(imageIndex) != imageIndex) {
+      await _progressBox.put(challengeId, [current.first..insert(imageIndex, imageIndex), 9]);
+    }
+  }
+
+  Future<void> recordImageRemoved(String challengeId, int imageIndex) async {
+    final current = _progressBox.get(challengeId, defaultValue: [0, 9]) as List;
+    await _progressBox.put(challengeId, [current.first.removeAt(imageIndex), 9]);
+  }
+
+  Future<void> _validateProgressCache() async {
+    final path = await localPath;
+
+    
+    bool needsUpdate = false;
+    
+    for (final challengeId in [..._globalBox.keys, ..._userBox.keys]) {
+    final List<int> actualCount = [];
+
+    for (int i = 0; i < 9; i++) {
+      final file = File('$path/challenge_$challengeId$i.png');
+      if (await file.exists()) {
+        actualCount.add(i);
+      }
+    }
+      
+      final cached = _progressBox.get(challengeId, defaultValue: [[], 9]) as List;
+      if (cached[0] != actualCount) {
+        await _progressBox.put(challengeId, [actualCount, 9]);
+        needsUpdate = true;
+      }
+    }
+    
+    if (needsUpdate) {
+      _progressUpdateController?.add(null);
+    }
+  }
 }
 
 final repositoryProvider = FutureProvider.family<ChallengesRepository, String>((ref, userId) async {
@@ -112,12 +208,17 @@ final repositoryProvider = FutureProvider.family<ChallengesRepository, String>((
   return repo;
 });
 
-final globalChallengesProvider = StreamProvider.family<Map<String, Challenge>, String>((ref, userId) async* {
-  final repo = await ref.watch(repositoryProvider(userId).future);
-  yield* repo.watchGlobal();
-});
-
 final userChallengesProvider = StreamProvider.family<Map<String, Challenge>, String>((ref, userId) async* {
   final repo = await ref.watch(repositoryProvider(userId).future);
-  yield* repo.watchUser();
+  yield* repo.watchUserWithProgress();
+});
+
+final globalChallengeProvider = StreamProvider.family<Map<String, Challenge>, String>((ref, userId) async* {
+  final repo = await ref.watch(repositoryProvider(userId).future);
+  yield* repo.watchGlobalWithProgress();
+});
+
+final globalJoinsProvider = StreamProvider.family<Map, String>((ref, userId) async* {
+  final repo = await ref.watch(repositoryProvider(userId).future);
+  yield* repo.watchJoins();
 });

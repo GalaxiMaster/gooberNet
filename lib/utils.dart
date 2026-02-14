@@ -124,3 +124,10 @@ DateTime parseDate(dynamic value) {
   if (value is DateTime) return value;
   throw Exception('Unsupported date type: ${value.runtimeType}');
 }
+
+extension SafeIndex<E> on List<E> {
+  E? at(int i) {
+    if (i < 0 || i >= length) return null;
+    return this[i];
+  }
+}

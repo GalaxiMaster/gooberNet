@@ -24,9 +24,6 @@ class ChallengesPage extends ConsumerStatefulWidget {
 class _ChallengesPageState extends ConsumerState<ChallengesPage> {
   Map<String, Map<String, dynamic>> userChallenges = {};
 
-  final Map<String, List<int>> _progressCache = {};
-
-
   Duration getTimeRemaining(DateTime startTime) {
     DateTime now = DateTime.now();
     return startTime.difference(now);
@@ -34,8 +31,15 @@ class _ChallengesPageState extends ConsumerState<ChallengesPage> {
 
   @override
   Widget build(BuildContext context) {
-    final allChallengesAsync = ref.watch(globalChallengesProvider(FirebaseAuth.instance.currentUser!.uid));
-    final customChallengesAsync = ref.watch(userChallengesProvider(FirebaseAuth.instance.currentUser!.uid));
+    final allChallengesAsync = ref.watch(
+      globalChallengeProvider(FirebaseAuth.instance.currentUser!.uid),
+    );
+    final customChallengesAsync = ref.watch(
+      userChallengesProvider(FirebaseAuth.instance.currentUser!.uid),
+    );
+    final globalJoinsAsync= ref.watch(
+      globalJoinsProvider(FirebaseAuth.instance.currentUser!.uid),
+    );
     return Padding(
       padding: const EdgeInsets.all(8.0),
       child: SingleChildScrollView(
@@ -47,9 +51,7 @@ class _ChallengesPageState extends ConsumerState<ChallengesPage> {
               padding: const EdgeInsets.symmetric(horizontal: 10),
               child: Text(
                 'Global',
-                style: GoogleFonts.googleSansCode(
-                  fontSize: 16,
-                ),
+                style: GoogleFonts.googleSansCode(fontSize: 16),
               ),
             ),
             allChallengesAsync.when(
@@ -62,45 +64,58 @@ class _ChallengesPageState extends ConsumerState<ChallengesPage> {
                     final challenge = allChallenges.entries.toList()[index];
                     final String challengeId = challenge.key;
                     final Challenge data = challenge.value;
-                    final bool isJoined = userChallenges.containsKey(challengeId);
-                
-                    return GestureDetector(
-                      onTap: () => Navigator.push(
-                        context,
-                        MaterialPageRoute(builder: (context) => ChallengeDetails(data: data.toMap(), challengeId: challenge.key)),
-                      ),
-                      child: Card(
-                        color: Colors.grey.withValues(alpha: 0.2),
-                        child: Padding(
-                          padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
-                          child: Column(
-                            children: [
-                              _buildHeader(data.toMap()),
-                              const SizedBox(height: 10),
-                              
-                              // Show Progress bar ONLY if joined, using cached data
-                              if (isJoined) _buildProgressBar(challenge.key),
-                
-                              _buildActionButtons(challengeId, isJoined),
-                            ],
+
+                    return globalJoinsAsync.maybeWhen(
+                      data: (joinsData){
+                        bool isJoined = joinsData.containsKey(challenge.key);
+                        return GestureDetector(
+                          onTap: () => Navigator.push(
+                            context,
+                            MaterialPageRoute(
+                              builder: (context) => ChallengeDetails(
+                                data: data.toMap(),
+                                challengeId: challenge.key,
+                              ),
+                            ),
                           ),
-                        ),
-                      ),
+                          child: Card(
+                            color: Colors.grey.withValues(alpha: 0.2),
+                            child: Padding(
+                              padding: const EdgeInsets.symmetric(
+                                horizontal: 14,
+                                vertical: 12,
+                              ),
+                              child: Column(
+                                children: [
+                                  _buildHeader(data.toMap()),
+                                  const SizedBox(height: 10),
+
+                                  // Show Progress bar ONLY if joined, using cached data
+                                  if (isJoined) _buildProgressBar(challenge.value),
+    
+
+                                  _buildActionButtons(challengeId, isJoined),
+                                ],
+                              ),
+                            ),
+                          ),
+                        );
+                      },
+                      orElse: ()=>SizedBox.shrink()
                     );
                   },
                 );
-              }, 
-              error: (error, trace) => Text('Failed to get data. Error: $error'), 
-              loading: ()=> CircularProgressIndicator()
+              },
+              error: (error, trace) =>
+                  Text('Failed to get data. Error: $error'),
+              loading: () => CircularProgressIndicator(),
             ),
-            SizedBox(height: 10,),
+            SizedBox(height: 10),
             Padding(
               padding: const EdgeInsets.symmetric(horizontal: 10),
               child: Text(
                 'Custom',
-                style: GoogleFonts.googleSansCode(
-                  fontSize: 16,
-                ),
+                style: GoogleFonts.googleSansCode(fontSize: 16),
               ),
             ),
             customChallengesAsync.when(
@@ -112,16 +127,24 @@ class _ChallengesPageState extends ConsumerState<ChallengesPage> {
                   itemBuilder: (context, index) {
                     final challenge = customChallenges.entries.toList()[index];
                     final Map data = challenge.value.toMap();
-                
+
                     return GestureDetector(
                       onTap: () => Navigator.push(
                         context,
-                        MaterialPageRoute(builder: (context) => ChallengeDetails(data: data, challengeId: challenge.key,)),
+                        MaterialPageRoute(
+                          builder: (context) => ChallengeDetails(
+                            data: data,
+                            challengeId: challenge.key,
+                          ),
+                        ),
                       ),
                       child: Card(
                         color: Colors.grey.withValues(alpha: 0.2),
                         child: Padding(
-                          padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
+                          padding: const EdgeInsets.symmetric(
+                            horizontal: 14,
+                            vertical: 12,
+                          ),
                           child: Column(
                             children: [
                               Row(
@@ -129,18 +152,31 @@ class _ChallengesPageState extends ConsumerState<ChallengesPage> {
                                 children: [
                                   Expanded(
                                     child: Column(
-                                      crossAxisAlignment: CrossAxisAlignment.start,
+                                      crossAxisAlignment:
+                                          CrossAxisAlignment.start,
                                       children: [
-                                        Text(data['name'], style: const TextStyle(fontSize: 18, fontWeight: FontWeight.bold)),
-                                        Text(data['description'], overflow: TextOverflow.ellipsis, maxLines: 2),
+                                        Text(
+                                          data['name'],
+                                          style: const TextStyle(
+                                            fontSize: 18,
+                                            fontWeight: FontWeight.bold,
+                                          ),
+                                        ),
+                                        Text(
+                                          data['description'],
+                                          overflow: TextOverflow.ellipsis,
+                                          maxLines: 2,
+                                        ),
                                       ],
-                                    ),  
+                                    ),
                                   ),
                                   _buildChallengeIcon(),
                                 ],
                               ),
                               const SizedBox(height: 10),
-                              _buildProgressBar(challenge.key),
+                              _buildProgressBar(
+                                challenge.value
+                              ),
                             ],
                           ),
                         ),
@@ -148,9 +184,10 @@ class _ChallengesPageState extends ConsumerState<ChallengesPage> {
                     );
                   },
                 );
-              }, 
-              error: (error, trace) => Text('Failed to get data. Error: $error'), 
-              loading: ()=> CircularProgressIndicator()
+              },
+              error: (error, trace) =>
+                  Text('Failed to get data. Error: $error'),
+              loading: () => CircularProgressIndicator(),
             ),
           ],
         ),
@@ -170,7 +207,10 @@ class _ChallengesPageState extends ConsumerState<ChallengesPage> {
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
               Container(
-                padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+                padding: const EdgeInsets.symmetric(
+                  horizontal: 12,
+                  vertical: 6,
+                ),
                 decoration: BoxDecoration(
                   borderRadius: BorderRadius.circular(25),
                   color: Colors.grey.withValues(alpha: 0.1),
@@ -178,32 +218,53 @@ class _ChallengesPageState extends ConsumerState<ChallengesPage> {
                 child: Row(
                   mainAxisSize: MainAxisSize.min,
                   children: [
-                    Icon(Icons.sunny, size: 16, color: isActive ? Colors.green : const Color(0xFFFFD700)),
+                    Icon(
+                      Icons.sunny,
+                      size: 16,
+                      color: isActive ? Colors.green : const Color(0xFFFFD700),
+                    ),
                     const SizedBox(width: 5),
-                    Text(isActive ? 'Active' : 'Starting in ${timeTillStart.inDays} days'),
+                    Text(
+                      isActive
+                          ? 'Active'
+                          : 'Starting in ${timeTillStart.inDays} days',
+                    ),
                   ],
                 ),
               ),
               const SizedBox(height: 8),
-              Text(data['name'], style: const TextStyle(fontSize: 18, fontWeight: FontWeight.bold)),
-              Text(data['description'], overflow: TextOverflow.ellipsis, maxLines: 2),
+              Text(
+                data['name'],
+                style: const TextStyle(
+                  fontSize: 18,
+                  fontWeight: FontWeight.bold,
+                ),
+              ),
+              Text(
+                data['description'],
+                overflow: TextOverflow.ellipsis,
+                maxLines: 2,
+              ),
             ],
-          ),  
+          ),
         ),
         _buildChallengeIcon(),
       ],
     );
   }
 
-  Widget _buildProgressBar(String id) {
-    final progress = _progressCache[id] ?? [0, 9];
+  Widget _buildProgressBar(Challenge progress) {
+    // final progress = _progressCache[id] ?? [0, 9];
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
-        Text('${progress[0]}/${progress[1]}', style: const TextStyle(fontWeight: FontWeight.bold)),
+        Text(
+          '${progress.progressCount.length}/${progress.progressTotal}',
+          style: const TextStyle(fontWeight: FontWeight.bold),
+        ),
         const SizedBox(height: 4),
         LinearProgressIndicator(
-          value: progress[0] / progress[1],
+          value: progress.progressCount.length/progress.progressTotal,
           borderRadius: BorderRadius.circular(40),
           minHeight: 12,
           backgroundColor: const Color.fromARGB(255, 59, 65, 77),
@@ -242,7 +303,10 @@ class _ChallengesPageState extends ConsumerState<ChallengesPage> {
             color: isJoined ? Colors.redAccent : Colors.teal.withBlue(200),
             borderRadius: BorderRadius.circular(30),
           ),
-          child: Text(isJoined ? 'Leave' : 'Join', style: const TextStyle(fontSize: 18)),
+          child: Text(
+            isJoined ? 'Leave' : 'Join',
+            style: const TextStyle(fontSize: 18),
+          ),
         ),
       ),
     );
@@ -250,22 +314,33 @@ class _ChallengesPageState extends ConsumerState<ChallengesPage> {
 
   Widget _buildChallengeIcon() {
     return Container(
-      width: 70, height: 70,
-      decoration: BoxDecoration(color: Colors.deepPurpleAccent, borderRadius: BorderRadius.circular(40), image: DecorationImage(image: AssetImage('assets/images/color-hunt-header.jpg'))),
+      width: 70,
+      height: 70,
+      decoration: BoxDecoration(
+        color: Colors.deepPurpleAccent,
+        borderRadius: BorderRadius.circular(40),
+        image: DecorationImage(
+          image: AssetImage('assets/images/color-hunt-header.jpg'),
+        ),
+      ),
     );
   }
 }
 
-class ChallengeDetails extends StatefulWidget {
+class ChallengeDetails extends ConsumerStatefulWidget {
   final Map data;
   final String challengeId;
-  const ChallengeDetails({super.key, required this.data, required this.challengeId});
+  const ChallengeDetails({
+    super.key,
+    required this.data,
+    required this.challengeId,
+  });
   @override
   // ignore: library_private_types_in_public_api
   _ChallengeDetailsState createState() => _ChallengeDetailsState();
 }
 
-class _ChallengeDetailsState extends State<ChallengeDetails> {
+class _ChallengeDetailsState extends ConsumerState<ChallengeDetails> {
   Map<int, String> selectedImages = {};
 
   // Save image to disk
@@ -292,8 +367,9 @@ class _ChallengeDetailsState extends State<ChallengeDetails> {
       selectedImages = loaded;
     });
   }
+
   @override
-  initState(){
+  initState() {
     super.initState();
     _loadSavedImages();
     Future.microtask(() {
@@ -304,6 +380,7 @@ class _ChallengeDetailsState extends State<ChallengeDetails> {
       );
     });
   }
+
   @override
   Widget build(BuildContext context) {
     return Scaffold(
@@ -325,60 +402,58 @@ class _ChallengeDetailsState extends State<ChallengeDetails> {
                 children: [
                   Row(
                     children: [
-                      Text(
-                        'Color target: ',
-                        style: TextStyle(
-                          fontSize: 18
-                        ),
-                      ),
+                      Text('Color target: ', style: TextStyle(fontSize: 18)),
                       Text(
                         widget.data['target']['colorName'],
                         style: GoogleFonts.vt323(
                           color: hexToColor(widget.data['target']['hexApprox']),
                           fontSize: 22,
-                          fontWeight: FontWeight.bold
+                          fontWeight: FontWeight.bold,
                         ),
-                      )
+                      ),
                     ],
                   ),
                   Container(
                     height: 20,
                     decoration: BoxDecoration(
                       color: hexToColor(widget.data['target']['hexApprox']),
-                      borderRadius: BorderRadius.circular(5)
+                      borderRadius: BorderRadius.circular(5),
                     ),
                   ),
                   GridView.builder(
                     physics: const NeverScrollableScrollPhysics(),
-                    gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
-                      crossAxisCount: 3,
-                      crossAxisSpacing: 2.5,
-                      mainAxisSpacing: 2.5,
-                      childAspectRatio: 1.0, // forces squares
-                    ),
+                    gridDelegate:
+                        const SliverGridDelegateWithFixedCrossAxisCount(
+                          crossAxisCount: 3,
+                          crossAxisSpacing: 2.5,
+                          mainAxisSpacing: 2.5,
+                          childAspectRatio: 1.0, // forces squares
+                        ),
                     itemCount: 9,
                     itemBuilder: (context, index) {
                       return GestureDetector(
                         onTap: () async {
                           final ImagePicker picker = ImagePicker();
-                  
+
                           final res = await picker.pickImage(
                             source: ImageSource.gallery,
                             imageQuality: 100, // optional compression
                           );
-                          if (res != null){
+                          if (res != null) {
                             final fileSize = await res.length(); // in bytes
 
                             const maxSize = 5 * 1024 * 1024; // 5 MB limit
-                            if (fileSize > maxSize){
-                              if (context.mounted){
+                            if (fileSize > maxSize) {
+                              if (context.mounted) {
                                 ScaffoldMessenger.of(context).showSnackBar(
-                                    SnackBar(
-                                      content: Text("File too large. Maximum allowed is 5MB."),
+                                  SnackBar(
+                                    content: Text(
+                                      "File too large. Maximum allowed is 5MB.",
                                     ),
-                                  );    
-                                }
-                                return;
+                                  ),
+                                );
+                              }
+                              return;
                             }
                             Uint8List imageAsBytes = await res.readAsBytes();
                             String imagePath = res.path;
@@ -386,6 +461,16 @@ class _ChallengeDetailsState extends State<ChallengeDetails> {
                             setState(() {
                               selectedImages[index] = imagePath;
                             });
+
+                            final repo = await ref.watch(
+                              repositoryProvider(
+                                FirebaseAuth.instance.currentUser!.uid,
+                              ).future,
+                            );
+                            await repo.recordImageAdded(
+                              widget.challengeId,
+                              index,
+                            );
                             await _persistImage(index, imageAsBytes);
                           }
                         },
@@ -393,16 +478,16 @@ class _ChallengeDetailsState extends State<ChallengeDetails> {
                           borderRadius: BorderRadius.circular(2.5),
                           child: Container(
                             decoration: BoxDecoration(color: Colors.blueGrey),
-                            child: selectedImages.containsKey(index) 
-                              ? Image.file(
-                                fit: BoxFit.cover,
-                                // width: width, 
-                                // height: height, 
-                                File(selectedImages[index]!),
-                                gaplessPlayback: true,
-                                cacheWidth: 512,
-                              ) 
-                              : Icon(Icons.upload),
+                            child: selectedImages.containsKey(index)
+                                ? Image.file(
+                                    fit: BoxFit.cover,
+                                    // width: width,
+                                    // height: height,
+                                    File(selectedImages[index]!),
+                                    gaplessPlayback: true,
+                                    cacheWidth: 512,
+                                  )
+                                : Icon(Icons.upload),
                           ),
                         ),
                       );
@@ -415,25 +500,25 @@ class _ChallengeDetailsState extends State<ChallengeDetails> {
                       Container(
                         padding: EdgeInsets.symmetric(horizontal: 8),
                         decoration: BoxDecoration(
-                          color: Color.fromARGB(255, 40, 44, 52), 
-                          borderRadius: BorderRadius.circular(40)
+                          color: Color.fromARGB(255, 40, 44, 52),
+                          borderRadius: BorderRadius.circular(40),
                         ),
                         child: TextButton.icon(
                           onPressed: () async {
                             LoadingOverlay loadingOverlay = LoadingOverlay();
                             loadingOverlay.showLoadingOverlay(context);
-                            File file = await createNineImageCollageCanvas(images: selectedImages.values.toList());
+                            File file = await createNineImageCollageCanvas(
+                              images: selectedImages.values.toList(),
+                            );
                             loadingOverlay.removeLoadingOverlay();
                             if (await file.exists()) {
                               if (!context.mounted) return;
                               postAndUpload([XFile(file.path)], context);
                             }
-                          }, 
+                          },
                           label: Text(
                             'Post',
-                            style: TextStyle(
-                              color: Colors.white
-                            ),
+                            style: TextStyle(color: Colors.white),
                           ),
                           icon: Icon(Icons.post_add),
                           iconAlignment: IconAlignment.end,
@@ -442,14 +527,16 @@ class _ChallengeDetailsState extends State<ChallengeDetails> {
                       Container(
                         padding: EdgeInsets.symmetric(horizontal: 8),
                         decoration: BoxDecoration(
-                          color: Color.fromARGB(255, 40, 44, 52), 
-                          borderRadius: BorderRadius.circular(40)
+                          color: Color.fromARGB(255, 40, 44, 52),
+                          borderRadius: BorderRadius.circular(40),
                         ),
                         child: TextButton.icon(
                           onPressed: () async {
                             LoadingOverlay loadingOverlay = LoadingOverlay();
                             loadingOverlay.showLoadingOverlay(context);
-                            File file = await createNineImageCollageCanvas(images: selectedImages.values.toList());
+                            File file = await createNineImageCollageCanvas(
+                              images: selectedImages.values.toList(),
+                            );
                             if (await file.exists()) {
                               await SharePlus.instance.share(
                                 ShareParams(
@@ -460,25 +547,23 @@ class _ChallengeDetailsState extends State<ChallengeDetails> {
                               );
                             }
                             loadingOverlay.removeLoadingOverlay();
-                          }, 
+                          },
                           label: Text(
                             'Share',
-                            style: TextStyle(
-                              color: Colors.white
-                            ),
+                            style: TextStyle(color: Colors.white),
                           ),
                           icon: Icon(Icons.share),
                           iconAlignment: IconAlignment.end,
                         ),
-                      )
+                      ),
                     ],
                   ),
                 ],
               ),
-            )
+            ),
           ),
         ],
-      )
+      ),
     );
   }
 }
@@ -495,10 +580,7 @@ class _HeaderImage extends StatelessWidget {
       children: [
         Container(
           decoration: BoxDecoration(
-            image: DecorationImage(
-              image: _headerImage,
-              fit: BoxFit.cover,
-            ),
+            image: DecorationImage(image: _headerImage, fit: BoxFit.cover),
           ),
         ),
         Positioned(
@@ -511,10 +593,7 @@ class _HeaderImage extends StatelessWidget {
               gradient: LinearGradient(
                 begin: Alignment.topCenter,
                 end: Alignment.bottomCenter,
-                colors: [
-                  Colors.transparent,
-                  Color.fromARGB(255, 0, 20, 20),
-                ],
+                colors: [Colors.transparent, Color.fromARGB(255, 0, 20, 20)],
               ),
             ),
           ),
@@ -536,13 +615,10 @@ class _HeaderImage extends StatelessWidget {
               ),
               Text(
                 header,
-                style: GoogleFonts.vt323(
-                  fontSize: 27,
-                  color: Colors.white,
-                ),
+                style: GoogleFonts.vt323(fontSize: 27, color: Colors.white),
               ),
             ],
-          )
+          ),
         ),
       ],
     );
@@ -561,41 +637,58 @@ Future<File> createNineImageCollageCanvas({
 
   // 1. Draw Background (optional)
   final Paint backgroundPaint = Paint()..color = Colors.transparent;
-  canvas.drawRect(Rect.fromLTWH(0, 0, canvasSize.toDouble(), canvasSize.toDouble()), backgroundPaint);
+  canvas.drawRect(
+    Rect.fromLTWH(0, 0, canvasSize.toDouble(), canvasSize.toDouble()),
+    backgroundPaint,
+  );
 
   for (int i = 0; i < images.length; i++) {
     // Decode image into a GPU-friendly ui.Image
-    final ui.Codec codec = await ui.instantiateImageCodec(await File(images[i]).readAsBytes());
+    final ui.Codec codec = await ui.instantiateImageCodec(
+      await File(images[i]).readAsBytes(),
+    );
     final ui.FrameInfo frame = await codec.getNextFrame();
     final ui.Image uiImg = frame.image;
 
     final int row = i ~/ 3;
     final int col = i % 3;
-    
+
     // Calculate position
     final double x = col * (tileSize + spacing);
     final double y = row * (tileSize + spacing);
-    final Rect destRect = Rect.fromLTWH(x, y, tileSize.toDouble(), tileSize.toDouble());
+    final Rect destRect = Rect.fromLTWH(
+      x,
+      y,
+      tileSize.toDouble(),
+      tileSize.toDouble(),
+    );
 
     // 2. Create the Rounded Clip
     canvas.save();
-    canvas.clipRRect(RRect.fromRectAndRadius(destRect, Radius.circular(borderRadius)));
+    canvas.clipRRect(
+      RRect.fromRectAndRadius(destRect, Radius.circular(borderRadius)),
+    );
 
     // 3. Draw the image into the clipped area (Center Crop logic)
     _paintCenterCrop(canvas, uiImg, destRect);
-    
+
     canvas.restore();
   }
 
   // Convert Canvas to Image
-  final ui.Image finalImage = await recorder.endRecording().toImage(canvasSize, canvasSize);
-  final ByteData? byteData = await finalImage.toByteData(format: ui.ImageByteFormat.png);
-  
+  final ui.Image finalImage = await recorder.endRecording().toImage(
+    canvasSize,
+    canvasSize,
+  );
+  final ByteData? byteData = await finalImage.toByteData(
+    format: ui.ImageByteFormat.png,
+  );
+
   // Save to file
   final Directory dir = await getTemporaryDirectory();
   final File file = File('${dir.path}/collage_myCollage.png');
   await file.writeAsBytes(byteData!.buffer.asUint8List());
-  
+
   return file;
 }
 
@@ -611,5 +704,10 @@ void _paintCenterCrop(Canvas canvas, ui.Image image, Rect destRect) {
     side,
   );
 
-  canvas.drawImageRect(image, srcRect, destRect, Paint()..filterQuality = FilterQuality.high);
+  canvas.drawImageRect(
+    image,
+    srcRect,
+    destRect,
+    Paint()..filterQuality = FilterQuality.high,
+  );
 }
