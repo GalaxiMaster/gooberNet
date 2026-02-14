@@ -139,6 +139,10 @@ class _CreateChallengeState extends State<CreateChallenge> {
         colorName: colorName,
         gridSize: gridSize,
       );
+  int get autoMaxProgress => gridSize.toLowerCase().split('x').fold(1, (oldVal, newVal){
+    return oldVal * (int.tryParse(newVal) ?? 1);
+  });
+
 
   String get autoDescription => currentType.descriptionBuilder(
         colorName: colorName,
@@ -209,6 +213,7 @@ class _CreateChallengeState extends State<CreateChallenge> {
       "description": autoDescription,
       "gridSize": gridSize,
       "ruleSet": '$selectedType$gridSize',
+      'maxProgress': autoMaxProgress,
       "target": {
         "colorName": colorName,
         "hexApprox": colorHex,
