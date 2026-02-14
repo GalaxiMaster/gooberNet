@@ -178,12 +178,11 @@ class ChallengesRepository {
 
   Future<void> recordImageRemoved(String challengeId, int imageIndex) async {
     final current = _progressBox.get(challengeId, defaultValue: [0, 9]) as List;
-    await _progressBox.put(challengeId, [current.first.remove(imageIndex), 9]);
+    await _progressBox.put(challengeId, [current.first..remove(imageIndex), 9]);
   }
 
   Future<void> _validateProgressCache() async {
     final path = await localPath;
-
     
     bool needsUpdate = false;
     
