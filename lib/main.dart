@@ -490,7 +490,7 @@ class _PostTemplateState extends State<PostTemplate> with AutomaticKeepAliveClie
                                 ),
                           Text(data['displayName']),
                           Spacer(),
-                          // if (currentUid == postData['authorID'])
+                          if (currentUid == postData['authorID'])
                           GestureDetector(
                             onTap: (){
                               showModalBottomSheet(
