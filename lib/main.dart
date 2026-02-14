@@ -193,7 +193,6 @@ class HomePageState extends ConsumerState<HomePage> {
 
           final repo = await ref.watch(repositoryProvider(currentUser.uid).future);
           await repo.addUserChallenge(res);
-
         }
       },
       child: Icon(Icons.add),
@@ -234,9 +233,19 @@ class _HomeFeedPageState extends State<HomeFeedPage> {
           if (snapshot.connectionState == ConnectionState.waiting) return CircularProgressIndicator();
           final docs = snapshot.data!.docs;
       
-          return ListView(
-            cacheExtent: 10,
-            children: docs.map((d) => PostTemplate(postData: d.data() as Map<dynamic, dynamic>, favorited: likes.doc(d.id), postId: d.id)).toList(),
+          return ListView.builder(
+            cacheExtent: 3000,
+            addAutomaticKeepAlives: true,
+            addRepaintBoundaries: true,
+            itemCount: docs.length,
+            itemBuilder: (context, index) {
+              final d = docs[index];
+              return PostTemplate(
+                postData: d.data() as Map<dynamic, dynamic>, 
+                favorited: likes.doc(d.id), 
+                postId: d.id,
+              );
+            },
           );
         },
       ),
@@ -269,7 +278,7 @@ class PostTemplate extends StatefulWidget {
   State<PostTemplate> createState() => _PostTemplateState();
 }
 
-class _PostTemplateState extends State<PostTemplate> {
+class _PostTemplateState extends State<PostTemplate> with AutomaticKeepAliveClientMixin {
   int _currentPage = 0;
   final PageController _pageController = PageController();
 
@@ -282,6 +291,9 @@ class _PostTemplateState extends State<PostTemplate> {
 
   late int likeCount;
   late bool hasLiked = false;
+
+  @override
+  bool get wantKeepAlive => true; // This keeps the widget alive
 
   @override
   void initState() {
@@ -363,6 +375,7 @@ class _PostTemplateState extends State<PostTemplate> {
 
   @override
   Widget build(BuildContext context) {
+    super.build(context); // Required for AutomaticKeepAliveClientMixin
     final postDate = postData['postDate'].toDate();
     final minutesPassed = DateTime.now().difference(postDate).inMinutes;
     
@@ -399,11 +412,15 @@ class _PostTemplateState extends State<PostTemplate> {
                               onDoubleTap: () => likePost(),
                               child: Center(
                                 child: CachedNetworkImage(
+                                  key: ValueKey(postData['imageDetails'][index]['imageId']),
+                                  cacheKey: postData['imageDetails'][index]['imageId'],
                                   imageUrl: (postData['imageDetails'][index]['imageId']?.isNotEmpty ?? false)
                                       ? 'https://pub-b665727283304785a65fc86be829fa67.r2.dev/${postData['imageDetails'][index]['imageId']}'
                                       : 'https://via.placeholder.com/150',
                                   width: MediaQuery.sizeOf(context).width,
                                   fit: BoxFit.cover,
+                                  memCacheWidth: (MediaQuery.sizeOf(context).width * MediaQuery.of(context).devicePixelRatio).round(),
+                                  memCacheHeight: ((MediaQuery.sizeOf(context).width * 3/2) * MediaQuery.of(context).devicePixelRatio).round(), // ! Note this may not be accurate
                                   placeholder: (_, __) => Center(child: CircularProgressIndicator()),
                                   errorWidget: (_, __, ___) => const SizedBox(),
                                 ),
