@@ -84,7 +84,6 @@ class ChallengesRepository {
     });
   }
 
-
   Map<String, Challenge> _readUserWithProgress() {
     return {
       for (final key in _userBox.keys)
@@ -158,7 +157,17 @@ class ChallengesRepository {
 
     await _userBox.put(autoId, hiveSafe(data));
   }
-  
+  Future<void> deleteUserChallenge(String challengeId) async {
+    final docRef = _firestore
+        .collection('Users')
+        .doc(userId)
+        .collection('CustomChallenges')
+        .doc(challengeId); // Auto Gen Id
+
+    await docRef.delete();
+
+    await _userBox.delete(challengeId);
+  }
   Future<void> recordImageAdded(String challengeId, int imageIndex) async {
     final current = _progressBox.get(challengeId, defaultValue: [[], 9]) as List;
     List progress = current.first;

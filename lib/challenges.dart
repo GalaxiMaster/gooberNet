@@ -138,6 +138,35 @@ class _ChallengesPageState extends ConsumerState<ChallengesPage> {
                           ),
                         ),
                       ),
+                      onLongPress: (){
+                        showModalBottomSheet(
+                          context: context,
+                          builder: (ctx) {
+                            return Padding(
+                              padding: const EdgeInsets.all(8.0),
+                              child: Column(
+                                mainAxisSize: MainAxisSize.min,
+                                children: [
+                                  ListTile(
+                                    leading: Icon(Icons.delete),
+                                    title: Text('Delete Challenge'),
+                                    onTap: () async {
+                                      User? currentUser = FirebaseAuth.instance.currentUser;
+                                      if (currentUser == null) return; // Todo stop fetching every time
+
+                                      final repo = await ref.watch(repositoryProvider(currentUser.uid).future);
+                                      await repo.deleteUserChallenge(challenge.key);
+                                      
+                                      if (!context.mounted) return;
+                                      Navigator.pop(context);
+                                    },
+                                  ),
+                                ],
+                              ),
+                            );
+                          },
+                        );
+                      },
                       child: Card(
                         color: Colors.grey.withValues(alpha: 0.2),
                         child: Padding(
@@ -254,17 +283,16 @@ class _ChallengesPageState extends ConsumerState<ChallengesPage> {
   }
 
   Widget _buildProgressBar(Challenge progress) {
-    // final progress = _progressCache[id] ?? [0, 9];
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
         Text(
-          '${progress.progressCount.length}/${progress.progressTotal}',
+          '${progress.progressCount.length}/${progress.data['maxProgress'] ?? progress.progressTotal}',
           style: const TextStyle(fontWeight: FontWeight.bold),
         ),
         const SizedBox(height: 4),
         LinearProgressIndicator(
-          value: progress.progressCount.length/progress.progressTotal,
+          value: progress.progressCount.length/(progress.data['maxProgress'] ?? progress.progressTotal),
           borderRadius: BorderRadius.circular(40),
           minHeight: 12,
           backgroundColor: const Color.fromARGB(255, 59, 65, 77),
