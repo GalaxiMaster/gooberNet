@@ -171,14 +171,14 @@ class ChallengesRepository {
   Future<void> recordImageAdded(String challengeId, int imageIndex) async {
     final current = _progressBox.get(challengeId, defaultValue: [[], 9]) as List;
     List progress = current.first;
-    if (progress.at(imageIndex) != imageIndex) {
-      await _progressBox.put(challengeId, [current.first..insert(imageIndex, imageIndex), 9]);
+    if (!progress.contains(imageIndex)) {
+      await _progressBox.put(challengeId, [current.first..add(imageIndex), 9]);
     }
   }
 
   Future<void> recordImageRemoved(String challengeId, int imageIndex) async {
     final current = _progressBox.get(challengeId, defaultValue: [0, 9]) as List;
-    await _progressBox.put(challengeId, [current.first.removeAt(imageIndex), 9]);
+    await _progressBox.put(challengeId, [current.first.remove(imageIndex), 9]);
   }
 
   Future<void> _validateProgressCache() async {
@@ -187,19 +187,19 @@ class ChallengesRepository {
     
     bool needsUpdate = false;
     
-    for (final challengeId in [..._globalBox.keys, ..._userBox.keys]) {
-    final List<int> actualCount = [];
-
-    for (int i = 0; i < 9; i++) {
-      final file = File('$path/challenge_$challengeId$i.png');
-      if (await file.exists()) {
-        actualCount.add(i);
-      }
-    }
+    for (final MapEntry challenge in {..._globalBox.toMap(), ..._userBox.toMap()}.entries) {
+      final List<int> actualCount = [];
       
-      final cached = _progressBox.get(challengeId, defaultValue: [[], 9]) as List;
+      for (int i = 0; i < (challenge.value['maxProgress'] ?? 9); i++) {
+        final file = File('$path/challenge_${challenge.key}$i.png');
+        if (await file.exists()) {
+          actualCount.add(i);
+        }
+      }
+      
+      final cached = _progressBox.get(challenge.key, defaultValue: [[], 9]) as List;
       if (cached[0] != actualCount) {
-        await _progressBox.put(challengeId, [actualCount, 9]);
+        await _progressBox.put(challenge.key, [actualCount, 9]);
         needsUpdate = true;
       }
     }

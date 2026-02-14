@@ -383,7 +383,7 @@ class _ChallengeDetailsState extends ConsumerState<ChallengeDetails> {
     final path = await localPath;
     final Map<int, String> loaded = {};
 
-    for (int i = 0; i < 9; i++) {
+    for (int i = 0; i <( widget.data['maxProgress'] ?? 9); i++) {
       final file = File('$path/challenge_${widget.challengeId}$i.png');
       if (await file.exists()) {
         loaded[i] = file.path;
@@ -450,14 +450,13 @@ class _ChallengeDetailsState extends ConsumerState<ChallengeDetails> {
                   ),
                   GridView.builder(
                     physics: const NeverScrollableScrollPhysics(),
-                    gridDelegate:
-                        const SliverGridDelegateWithFixedCrossAxisCount(
-                          crossAxisCount: 3,
-                          crossAxisSpacing: 2.5,
-                          mainAxisSpacing: 2.5,
-                          childAspectRatio: 1.0, // forces squares
-                        ),
-                    itemCount: 9,
+                    gridDelegate: SliverGridDelegateWithFixedCrossAxisCount(
+                      crossAxisCount: int.tryParse((widget.data['gridSize'] ?? "3x3").toLowerCase().split('x').first) ?? 3,
+                      crossAxisSpacing: 2.5,
+                      mainAxisSpacing: 2.5,
+                      childAspectRatio: 1.0, // forces squares
+                    ),
+                    itemCount: widget.data['maxProgress'],
                     itemBuilder: (context, index) {
                       return GestureDetector(
                         onTap: () async {
@@ -535,7 +534,7 @@ class _ChallengeDetailsState extends ConsumerState<ChallengeDetails> {
                           onPressed: () async {
                             LoadingOverlay loadingOverlay = LoadingOverlay();
                             loadingOverlay.showLoadingOverlay(context);
-                            File file = await createNineImageCollageCanvas(
+                            File file = await createImageCollageCanvas(
                               images: selectedImages.values.toList(),
                             );
                             loadingOverlay.removeLoadingOverlay();
@@ -560,10 +559,23 @@ class _ChallengeDetailsState extends ConsumerState<ChallengeDetails> {
                         ),
                         child: TextButton.icon(
                           onPressed: () async {
+                            List<int> gridSize;
+                            try {
+                              gridSize = List<int>.from((widget.data['gridSize'] ?? "3x3").toLowerCase().split('x').map(int.parse).toList());
+                              if (gridSize.length != 2) {
+                                throw Exception("Grid size invalid");
+                              }
+                              // add more validation later
+                            } catch (e) {
+                              debugPrint('invalid grid size $e');
+                              return; // Consider elevating error, but for now - silent error 
+                            }
+
                             LoadingOverlay loadingOverlay = LoadingOverlay();
                             loadingOverlay.showLoadingOverlay(context);
-                            File file = await createNineImageCollageCanvas(
+                            File file = await createImageCollageCanvas(
                               images: selectedImages.values.toList(),
+                              gridSize: gridSize,
                             );
                             if (await file.exists()) {
                               await SharePlus.instance.share(
@@ -653,17 +665,20 @@ class _HeaderImage extends StatelessWidget {
   }
 }
 
-Future<File> createNineImageCollageCanvas({
+Future<File> createImageCollageCanvas({
   required List<String> images,
+  List<int> gridSize = const [3, 3],
   int tileSize = 512,
   double borderRadius = 15,
   double spacing = 6,
 }) async {
-  final int canvasSize = ((tileSize * 3) + (spacing * 2)).toInt();
+  int rows = gridSize[0];
+  int columns = gridSize[1];
+  final int canvasSize = ((tileSize * rows) + (spacing * 2)).toInt();
   final ui.PictureRecorder recorder = ui.PictureRecorder();
   final Canvas canvas = Canvas(recorder);
 
-  // 1. Draw Background (optional)
+  // Draw Background (optional)
   final Paint backgroundPaint = Paint()..color = Colors.transparent;
   canvas.drawRect(
     Rect.fromLTWH(0, 0, canvasSize.toDouble(), canvasSize.toDouble()),
@@ -678,8 +693,8 @@ Future<File> createNineImageCollageCanvas({
     final ui.FrameInfo frame = await codec.getNextFrame();
     final ui.Image uiImg = frame.image;
 
-    final int row = i ~/ 3;
-    final int col = i % 3;
+    final int row = i ~/ rows;
+    final int col = i % columns;
 
     // Calculate position
     final double x = col * (tileSize + spacing);
@@ -691,13 +706,13 @@ Future<File> createNineImageCollageCanvas({
       tileSize.toDouble(),
     );
 
-    // 2. Create the Rounded Clip
+    // Create the Rounded Clip
     canvas.save();
     canvas.clipRRect(
       RRect.fromRectAndRadius(destRect, Radius.circular(borderRadius)),
     );
 
-    // 3. Draw the image into the clipped area (Center Crop logic)
+    // Draw the image into the clipped area (Center Crop logic)
     _paintCenterCrop(canvas, uiImg, destRect);
 
     canvas.restore();
