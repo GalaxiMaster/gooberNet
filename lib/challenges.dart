@@ -377,7 +377,11 @@ class _ChallengeDetailsState extends ConsumerState<ChallengeDetails> {
     final file = File('$path/challenge_${widget.challengeId}$index.png');
     await file.writeAsBytes(bytes);
   }
-
+  // Remove image from disk
+  Future<void> _deleteImage(int index, String filePath) async {
+    final file = File(filePath);
+    await file.delete();
+  }
   // Load all saved images from disk
   Future<void> _loadSavedImages() async {
     final path = await localPath;
@@ -501,6 +505,16 @@ class _ChallengeDetailsState extends ConsumerState<ChallengeDetails> {
                             await _persistImage(index, imageAsBytes);
                           }
                         },
+                        onLongPress: () async {
+                          if (selectedImages[index] != null) {
+                            _deleteImage(index, selectedImages[index]!);
+                            final repo = await ref.watch(repositoryProvider(FirebaseAuth.instance.currentUser!.uid).future);
+                            await repo.recordImageRemoved(widget.challengeId, index);
+                            setState(() {
+                              selectedImages.remove(index);
+                            });
+                          }
+                        },
                         child: ClipRRect(
                           borderRadius: BorderRadius.circular(2.5),
                           child: Container(
@@ -532,10 +546,22 @@ class _ChallengeDetailsState extends ConsumerState<ChallengeDetails> {
                         ),
                         child: TextButton.icon(
                           onPressed: () async {
+                            List<int> gridSize;
+                            try {
+                              gridSize = List<int>.from((widget.data['gridSize'] ?? "3x3").toLowerCase().split('x').map(int.parse).toList());
+                              if (gridSize.length != 2) {
+                                throw Exception("Grid size invalid");
+                              }
+                              // add more validation later
+                            } catch (e) {
+                              debugPrint('invalid grid size $e');
+                              return; // Consider elevating error, but for now - silent error 
+                            }
                             LoadingOverlay loadingOverlay = LoadingOverlay();
                             loadingOverlay.showLoadingOverlay(context);
                             File file = await createImageCollageCanvas(
-                              images: selectedImages.values.toList(),
+                              images: selectedImages,
+                              gridSize: gridSize,
                             );
                             loadingOverlay.removeLoadingOverlay();
                             if (await file.exists()) {
@@ -574,7 +600,7 @@ class _ChallengeDetailsState extends ConsumerState<ChallengeDetails> {
                             LoadingOverlay loadingOverlay = LoadingOverlay();
                             loadingOverlay.showLoadingOverlay(context);
                             File file = await createImageCollageCanvas(
-                              images: selectedImages.values.toList(),
+                              images: selectedImages,
                               gridSize: gridSize,
                             );
                             if (await file.exists()) {
@@ -666,7 +692,7 @@ class _HeaderImage extends StatelessWidget {
 }
 
 Future<File> createImageCollageCanvas({
-  required List<String> images,
+  required Map<int, String> images,
   List<int> gridSize = const [3, 3],
   int tileSize = 512,
   double borderRadius = 15,
@@ -685,10 +711,11 @@ Future<File> createImageCollageCanvas({
     backgroundPaint,
   );
 
-  for (int i = 0; i < images.length; i++) {
+  for (int i = 0; i < rows * columns; i++) {
     // Decode image into a GPU-friendly ui.Image
+    if (!images.containsKey(i)) continue;
     final ui.Codec codec = await ui.instantiateImageCodec(
-      await File(images[i]).readAsBytes(),
+      await File(images[i]!).readAsBytes(),
     );
     final ui.FrameInfo frame = await codec.getNextFrame();
     final ui.Image uiImg = frame.image;
