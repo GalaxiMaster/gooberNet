@@ -420,7 +420,7 @@ class _PostTemplateState extends State<PostTemplate> with AutomaticKeepAliveClie
                                   width: MediaQuery.sizeOf(context).width,
                                   fit: BoxFit.cover,
                                   memCacheWidth: (MediaQuery.sizeOf(context).width * MediaQuery.of(context).devicePixelRatio).round(),
-                                  memCacheHeight: ((MediaQuery.sizeOf(context).width * 3/2) * MediaQuery.of(context).devicePixelRatio).round(), // ! Note this may not be accurate
+                                  // memCacheHeight: ((MediaQuery.sizeOf(context).width * 3/2) * MediaQuery.of(context).devicePixelRatio).round(), // ! Note this may not be accurate
                                   placeholder: (_, __) => Center(child: CircularProgressIndicator()),
                                   errorWidget: (_, __, ___) => const SizedBox(),
                                 ),
