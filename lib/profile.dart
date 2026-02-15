@@ -572,13 +572,12 @@ class _PostPageState extends State<PostPage> {
                 );
               }
 
-              final data = snapshot.data?.data();
-              if (data == null) {
+              if (snapshot.data == null) {
                 return const SizedBox.shrink();
               }
 
               return PostTemplate(
-                postData: data as Map<String, dynamic>,
+                post: snapshot.data!,
                 postId: widget.docs[i].id,
               );
             },

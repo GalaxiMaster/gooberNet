@@ -3,12 +3,14 @@ import 'package:cloudflare_r2_uploader/cloudflare_r2_uploader.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_dotenv/flutter_dotenv.dart';
+import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:goober_net/main.dart';
+import 'package:goober_net/providers/providers.dart';
 import 'package:goober_net/upload_page.dart';
 import 'package:image_picker/image_picker.dart';
 import 'package:path_provider/path_provider.dart';
 
-void postAndUpload(List<XFile> picked, BuildContext context) async { // TODO breakup function. also currently assumes files are within limits
+void postAndUpload(List<XFile> picked, BuildContext context, WidgetRef ref) async { // TODO breakup function. also currently assumes files are within limits
   final details = await Navigator.push(
     // ignore: use_build_context_synchronously
     context,
@@ -58,6 +60,8 @@ void postAndUpload(List<XFile> picked, BuildContext context) async { // TODO bre
   await FirebaseFirestore.instance.collection('Users').doc(FirebaseAuth.instance.currentUser?.uid).collection('Posts').doc(docId.id).set({
     'postDate': now,
   });
+  ref.read(postsProvider.notifier).addPost(docId);
+
 }
 
 

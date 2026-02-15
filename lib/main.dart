@@ -174,7 +174,7 @@ class HomePageState extends ConsumerState<HomePage> {
           }
         }
         if (!mounted) return;
-        postAndUpload(picked, context);
+        postAndUpload(picked, context, ref);
       },
       child: Icon(Icons.add),
     );
@@ -237,7 +237,8 @@ class _MainFeedPageState extends ConsumerState<MainFeedPage> {
             itemBuilder: (context, index) {
               final d = posts[index];
               return PostTemplate(
-                postData: d.data() as Map<dynamic, dynamic>, 
+                key: ValueKey(d.id),
+                post: d, 
                 postId: d.id,
               );
             },
@@ -259,28 +260,27 @@ Future<Map> getUser(String userId) async {
   return doc.data() as Map;
 }
 
-class PostTemplate extends StatefulWidget {
-  final Map postData;
+class PostTemplate extends ConsumerStatefulWidget {
+  final DocumentSnapshot post;
   final String postId;
 
   const PostTemplate({
     super.key,
-    required this.postData,
+    required this.post,
     required this.postId,
   });
 
   @override
-  State<PostTemplate> createState() => _PostTemplateState();
+  ConsumerState<PostTemplate> createState() => _PostTemplateState();
 }
 
-class _PostTemplateState extends State<PostTemplate> with AutomaticKeepAliveClientMixin {
+class _PostTemplateState extends ConsumerState<PostTemplate> with AutomaticKeepAliveClientMixin {
   int _currentPage = 0;
   final PageController _pageController = PageController();
 
   late Future<Map> userData;
   late DocumentReference postRef;
   late String? currentUid;
-
   late Map postData;
   late Future<Map> future = checkImageData();
 
@@ -293,11 +293,10 @@ class _PostTemplateState extends State<PostTemplate> with AutomaticKeepAliveClie
   @override
   void initState() {
     super.initState();
-
-    userData = getUser(widget.postData['authorID']);
+    postData = widget.post.data() as Map<dynamic, dynamic>;
+    userData = getUser(widget.post['authorID']);
     postRef = FirebaseFirestore.instance.collection('Posts').doc(widget.postId);
     currentUid = FirebaseAuth.instance.currentUser?.uid;
-    postData = widget.postData;
     likeCount = (postData['likeCount'] ?? 0) as int;
     _loadInitialLike();
   }
@@ -343,7 +342,7 @@ class _PostTemplateState extends State<PostTemplate> with AutomaticKeepAliveClie
   }
 
   Future<Map<dynamic, dynamic>> checkImageData() async {
-    final images = (widget.postData['imageDetails'] as List);
+    final images = (widget.post['imageDetails'] as List);
     for (var (i, image) in images.indexed) {
       if (image['height'] == null || image['width'] == null) {
         final ImageInfo info = await _getImageInfo('https://pub-b665727283304785a65fc86be829fa67.r2.dev/${image['imageId']}');
@@ -487,7 +486,7 @@ class _PostTemplateState extends State<PostTemplate> with AutomaticKeepAliveClie
                           Spacer(),
                           if (currentUid == postData['authorID'])
                           GestureDetector(
-                            onTap: (){
+                            onTap: () {
                               showModalBottomSheet(
                                 context: context,
                                 builder: (ctx) {
@@ -525,6 +524,8 @@ class _PostTemplateState extends State<PostTemplate> with AutomaticKeepAliveClie
                                             );
                                             if (res != true) return;
                                             if (!ctx.mounted) return;
+
+                                            ref.read(postsProvider.notifier).deletePost(widget.post);
                                             Navigator.pop(ctx);
                                             for (var image in postData['imageDetails']){
                                               await CloudFlareR2.deleteObject(

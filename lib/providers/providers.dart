@@ -1,7 +1,7 @@
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
-class PostsNotifier extends AsyncNotifier<List<QueryDocumentSnapshot<Map<String, dynamic>>>> {
+class PostsNotifier extends AsyncNotifier<List<DocumentSnapshot<Map<String, dynamic>>>> {
   static const int _pageSize = 10;
 
   final Query<Map<String, dynamic>> _baseQuery = FirebaseFirestore.instance
@@ -14,7 +14,7 @@ class PostsNotifier extends AsyncNotifier<List<QueryDocumentSnapshot<Map<String,
   bool _isLoadingMore = false;
 
   @override
-  Future<List<QueryDocumentSnapshot<Map<String, dynamic>>>> build() async {
+  Future<List<DocumentSnapshot<Map<String, dynamic>>>> build() async {
     final snapshot = await _baseQuery.get();
 
     if (snapshot.docs.isNotEmpty) {
@@ -25,19 +25,7 @@ class PostsNotifier extends AsyncNotifier<List<QueryDocumentSnapshot<Map<String,
 
     return snapshot.docs;
   }
-  Future<void> refreshData() async {
-    final snapshot = await _baseQuery.get();
 
-    if (snapshot.docs.isNotEmpty) {
-      _lastDocument = snapshot.docs.last;
-    }
-
-    _hasMore = snapshot.docs.length == _pageSize;
-
-    state = AsyncData([
-      ...snapshot.docs,
-    ]);
-  }
   Future<void> loadMore() async {
     if (_isLoadingMore || !_hasMore || state.isLoading) return;
 
@@ -87,6 +75,37 @@ class PostsNotifier extends AsyncNotifier<List<QueryDocumentSnapshot<Map<String,
     state = const AsyncLoading();
     state = AsyncData(await build());
   }
+
+  void addPost(DocumentReference docRef) async {
+      final current = state.value;
+      if (current == null) return;
+
+      final newDoc = await docRef.get()
+          as DocumentSnapshot<Map<String, dynamic>>;
+
+      final newState = [
+        newDoc,
+        ...current,
+      ];
+
+      state = AsyncValue.data(newState);
+  }
+
+  void deletePost(DocumentSnapshot post) {
+    final newState = List<DocumentSnapshot<Map<String, dynamic>>>.from(state.value!);
+
+    newState.removeWhere((doc) => doc.id == post.id);
+
+    state = AsyncValue.data(newState);
+
+
+    if (_lastDocument != null && post.id == _lastDocument!.id) {
+      _lastDocument = newState.isNotEmpty ? newState.last : null;
+    }
+
+    state = AsyncValue.data(newState);
+  }
+
 }
 
-final postsProvider = AsyncNotifierProvider<PostsNotifier, List<QueryDocumentSnapshot<Map<String, dynamic>>>>(PostsNotifier.new);
+final postsProvider = AsyncNotifierProvider<PostsNotifier, List<DocumentSnapshot<Map<String, dynamic>>>>(PostsNotifier.new);

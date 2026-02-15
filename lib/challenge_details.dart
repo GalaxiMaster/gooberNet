@@ -358,7 +358,7 @@ class _ChallengeDetailsState extends ConsumerState<ChallengeDetails> {
                                   loadingOverlay.removeLoadingOverlay();
                                   if (await file.exists()) {
                                     if (!context.mounted) return;
-                                    postAndUpload([XFile(file.path)], context);
+                                    postAndUpload([XFile(file.path)], context, ref);
                                   }
                                 },
                           style: ElevatedButton.styleFrom(
