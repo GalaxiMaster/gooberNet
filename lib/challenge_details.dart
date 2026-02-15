@@ -6,7 +6,7 @@ import 'dart:ui' as ui;
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
-import 'package:goober_net/providers.dart';
+import 'package:goober_net/providers/challenge_repo_providers.dart';
 import 'package:goober_net/utils.dart';
 import 'package:goober_net/widgets.dart';
 import 'package:google_fonts/google_fonts.dart';

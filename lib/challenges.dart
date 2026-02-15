@@ -4,7 +4,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:goober_net/challenge_details.dart';
 import 'package:goober_net/models.dart';
-import 'package:goober_net/providers.dart';
+import 'package:goober_net/providers/challenge_repo_providers.dart';
 import 'package:goober_net/utils.dart';
 import 'package:google_fonts/google_fonts.dart';
 

@@ -10,7 +10,8 @@ import 'package:flutter_dotenv/flutter_dotenv.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:goober_net/challenges.dart';
 import 'package:goober_net/create_challenge.dart';
-import 'package:goober_net/providers.dart';
+import 'package:goober_net/providers/challenge_repo_providers.dart';
+import 'package:goober_net/providers/providers.dart';
 import 'package:goober_net/utils.dart';
 import 'package:goober_net/profile.dart';
 import 'package:goober_net/settings.dart';
@@ -86,10 +87,8 @@ class HomePage extends ConsumerStatefulWidget {
 
 class HomePageState extends ConsumerState<HomePage> {
   int selectedPageIndex = 0;
-  final posts = FirebaseFirestore.instance.collection('Posts').orderBy('postDate', descending: true); 
-  final likes = FirebaseFirestore.instance.collection('Likes');
   final _pages = [    
-    HomeFeedPage(),    
+    MainFeedPage(),    
     ChallengesPage(),
   ];
 
@@ -180,6 +179,7 @@ class HomePageState extends ConsumerState<HomePage> {
       child: Icon(Icons.add),
     );
   }
+  
   Widget createChallengeFab() {
     return FloatingActionButton(
       onPressed: () async{
@@ -200,54 +200,51 @@ class HomePageState extends ConsumerState<HomePage> {
   }
 }
 
-class HomeFeedPage extends StatefulWidget {
-  const HomeFeedPage({super.key});
+class MainFeedPage extends ConsumerStatefulWidget {
+  const MainFeedPage({super.key});
   @override
   // ignore: library_private_types_in_public_api
-  _HomeFeedPageState createState() => _HomeFeedPageState();
+  _MainFeedPageState createState() => _MainFeedPageState();
 }
 
-class _HomeFeedPageState extends State<HomeFeedPage> {
+class _MainFeedPageState extends ConsumerState<MainFeedPage> {
   late Future<QuerySnapshot> postSnapshot;
-  final posts = FirebaseFirestore.instance.collection('Posts').orderBy('postDate', descending: true); 
-  final likes = FirebaseFirestore.instance.collection('Likes');
-
+  final postsScrollController = ScrollController();
   @override
   initState(){
     super.initState();
-    getDocsFuture();
-  }
-  Future<void> getDocsFuture() async {
-    setState(() {
-      postSnapshot = posts.get();
+    postsScrollController.addListener(() {
+      if (postsScrollController.position.pixels >
+          postsScrollController.position.maxScrollExtent - 300) {
+        ref.read(postsProvider.notifier).loadMore();
+      }
     });
   }
+
   @override
   Widget build(BuildContext context) {
-
+    final postsAsync = ref.watch(postsProvider);
     return RefreshIndicator(
-      onRefresh: () => getDocsFuture(),
-      child: FutureBuilder(
-        future: postSnapshot,
-        builder: (context, snapshot) {
-          if (snapshot.connectionState == ConnectionState.waiting) return CircularProgressIndicator();
-          final docs = snapshot.data!.docs;
-      
+      onRefresh: () => ref.read(postsProvider.notifier).refresh(),
+      child: postsAsync.when(
+        data: (posts){
           return ListView.builder(
+            controller: postsScrollController,
             cacheExtent: 3000,
             addAutomaticKeepAlives: true,
             addRepaintBoundaries: true,
-            itemCount: docs.length,
+            itemCount: posts.length,
             itemBuilder: (context, index) {
-              final d = docs[index];
+              final d = posts[index];
               return PostTemplate(
                 postData: d.data() as Map<dynamic, dynamic>, 
-                favorited: likes.doc(d.id), 
                 postId: d.id,
               );
             },
           );
-        },
+        }, 
+        error: (error, stack) => Text('Error occured when fetching posts'), 
+        loading: () => CircularProgressIndicator()
       ),
     );
   }
@@ -264,13 +261,11 @@ Future<Map> getUser(String userId) async {
 
 class PostTemplate extends StatefulWidget {
   final Map postData;
-  final DocumentReference? favorited;
   final String postId;
 
   const PostTemplate({
     super.key,
     required this.postData,
-    required this.favorited,
     required this.postId,
   });
 
@@ -293,7 +288,7 @@ class _PostTemplateState extends State<PostTemplate> with AutomaticKeepAliveClie
   late bool hasLiked = false;
 
   @override
-  bool get wantKeepAlive => true; // This keeps the widget alive
+  bool get wantKeepAlive => true;
 
   @override
   void initState() {
@@ -742,13 +737,13 @@ class ImageOverlay {
                       backgroundDecoration: const BoxDecoration(color: Colors.transparent),
                       child: ClipRRect(
                         borderRadius: BorderRadius.circular(20),
-                        child: CachedNetworkImage(
-                          imageUrl: imageData['imageId'] != null
-                              ? 'https://pub-b665727283304785a65fc86be829fa67.r2.dev/${imageData['imageId']}'
-                              : '',
+                        child: imageData['imageId'] != null ? CachedNetworkImage(
+                          key: ValueKey(imageData['imageId']),
+                          cacheKey: imageData['imageId'],
+                          imageUrl: 'https://pub-b665727283304785a65fc86be829fa67.r2.dev/${imageData['imageId']}',
                           fit: BoxFit.cover,
                           errorWidget: (_, __, ___) => const SizedBox(),
-                        ),
+                        ) : SizedBox(),
                       ),
                     ),
                   );

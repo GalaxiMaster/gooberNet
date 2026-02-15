@@ -547,7 +547,6 @@ class PostPage extends StatefulWidget {
 
 class _PostPageState extends State<PostPage> {
   final ItemScrollController _scrollController = ItemScrollController();
-  final likes = FirebaseFirestore.instance.collection('Likes');
 
   @override
   Widget build(BuildContext context) {
@@ -580,7 +579,6 @@ class _PostPageState extends State<PostPage> {
 
               return PostTemplate(
                 postData: data as Map<String, dynamic>,
-                favorited: likes.doc(widget.docs[i].id),
                 postId: widget.docs[i].id,
               );
             },
