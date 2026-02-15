@@ -410,41 +410,58 @@ class ProfilePageState extends State<ProfilePage> with AutomaticKeepAliveClientM
       return _buildSkeletonItem();
     }
     
-    return GestureDetector(
-      onTap: () {
-        Navigator.push(
-          context,
-          MaterialPageRoute(
-            builder: (context) => PostPage(
-              docs: _posts,
-              initialIndex: index,
-            ),
-          ),
-        );
-      },
-      onLongPress: () {
-        if (cachedData['imageDetails'] != null && 
-            cachedData['imageDetails'].isNotEmpty) {
-          ImageOverlay.show(
+    return RepaintBoundary(
+      child: GestureDetector(
+        onTap: () {
+          Navigator.push(
             context,
-            cachedData['imageDetails'][0],
+            MaterialPageRoute(
+              builder: (context) => PostPage(
+                docs: _posts,
+                initialIndex: index,
+              ),
+            ),
           );
-        }
-      },
-      child: CachedNetworkImage(
-        imageUrl: cachedData['imageDetails'] != null && 
-                   cachedData['imageDetails'].isNotEmpty
-            ? 'https://pub-b665727283304785a65fc86be829fa67.r2.dev/${cachedData['imageDetails'][0]['imageId']}'
-            : '',
-        cacheKey: cachedData['imageDetails'] != null && 
-                   cachedData['imageDetails'].isNotEmpty
-            ? cachedData['imageDetails'][0]['imageId']
-            : null,
-        fit: BoxFit.cover,
-        placeholder: (context, url) => _buildSkeletonItem(),
-        errorWidget: (context, url, error) => Container(
-          color: Colors.grey.shade900,
-          child: const Icon(Icons.error_outline, color: Colors.grey),
+        },
+        onLongPress: () {
+          if (cachedData['imageDetails'] != null && 
+              cachedData['imageDetails'].isNotEmpty) {
+            ImageOverlay.show(
+              context,
+              cachedData['imageDetails'][0],
+            );
+          }
+        },
+        child: LayoutBuilder(
+          builder: (context, constraints) {
+            // Calculate optimal cache size based on actual widget size and device pixel ratio
+            final devicePixelRatio = MediaQuery.of(context).devicePixelRatio;
+            final cacheWidth = (constraints.maxWidth * devicePixelRatio).round();
+            final cacheHeight = (constraints.maxHeight * devicePixelRatio).round();
+            
+            return CachedNetworkImage(
+              imageUrl: cachedData['imageDetails'] != null && 
+                         cachedData['imageDetails'].isNotEmpty
+                  ? 'https://pub-b665727283304785a65fc86be829fa67.r2.dev/${cachedData['imageDetails'][0]['imageId']}'
+                  : '',
+              cacheKey: cachedData['imageDetails'] != null && 
+                         cachedData['imageDetails'].isNotEmpty
+                  ? cachedData['imageDetails'][0]['imageId']
+                  : null,
+              fit: BoxFit.cover,
+              memCacheWidth: cacheWidth,
+              memCacheHeight: cacheHeight,
+              maxHeightDiskCache: cacheHeight,
+              maxWidthDiskCache: cacheWidth,
+              fadeInDuration: Duration.zero,
+              fadeOutDuration: Duration.zero,
+              placeholder: (context, url) => _buildSkeletonItem(),
+              errorWidget: (context, url, error) => Container(
+                color: Colors.grey.shade900,
+                child: const Icon(Icons.error_outline, color: Colors.grey),
+              ),
+            );
+          },
         ),
       ),
     );
