@@ -10,186 +10,516 @@ class ProfilePage extends StatefulWidget {
   final String uid;
   final Map userData;
   const ProfilePage({super.key, required this.uid, required this.userData});
+  
   @override
-  // ignore: library_private_types_i``n_public_api
   ProfilePageState createState() => ProfilePageState();
 }
 
-class ProfilePageState extends State<ProfilePage> {
-  late final Future<QuerySnapshot> userPosts;
-  final likes = FirebaseFirestore.instance.collection('Likes');
+class ProfilePageState extends State<ProfilePage> with AutomaticKeepAliveClientMixin {
+  final ScrollController _scrollController = ScrollController();
+  final int _postsPerPage = 15;
+  
+  List<QueryDocumentSnapshot> _posts = [];
+  DocumentSnapshot? _lastDocument;
+  bool _isLoadingMore = false;
+  bool _hasMorePosts = true;
+  bool _isInitialLoading = true;
+  
   bool isFollowed = false;
-  Map<String, Future<DocumentSnapshot<Map>>> postDataCache = {};
+  int postCount = 0;
+  Map<String, Map<String, dynamic>> postDataCache = {};
   String currentUid = FirebaseAuth.instance.currentUser!.uid;
 
   @override
-  initState() {
-    super.initState();
-    setUserCollection();
-    getIsFollowed();
-  }
-  setUserCollection() async{
-    userPosts = FirebaseFirestore.instance.collection('Users').doc(widget.uid).collection('Posts').orderBy('postDate', descending: true).get();
-  }
-  getIsFollowed() async {
-    final bool res = (await FirebaseFirestore.instance.collection('Users').doc(FirebaseAuth.instance.currentUser!.uid).collection('Following').doc(widget.uid).get()).exists;
+  bool get wantKeepAlive => true;
 
-    setState(() {
-      isFollowed = res;
-    });
-  }
   @override
-  Widget build( context) {
+  void initState() {
+    super.initState();
+    _scrollController.addListener(_onScroll);
+    _initialize();
+  }
+
+  @override
+  void dispose() {
+    _scrollController.dispose();
+    super.dispose();
+  }
+
+  Future<void> _initialize() async {
+    await Future.wait([
+      _loadInitialPosts(),
+      _getIsFollowed(),
+      _getPostCount(),
+    ]);
+  }
+
+  Future<void> _loadInitialPosts() async {
+    try {
+      final snapshot = await FirebaseFirestore.instance
+          .collection('Users')
+          .doc(widget.uid)
+          .collection('Posts')
+          .orderBy('postDate', descending: true)
+          .limit(_postsPerPage)
+          .get();
+
+      if (mounted) {
+        setState(() {
+          _posts = snapshot.docs;
+          _lastDocument = snapshot.docs.isNotEmpty ? snapshot.docs.last : null;
+          _hasMorePosts = snapshot.docs.length == _postsPerPage;
+          _isInitialLoading = false;
+        });
+        
+        // Preload post data for initial posts
+        _preloadPostData(snapshot.docs);
+      }
+    } catch (e) {
+      if (mounted) {
+        setState(() => _isInitialLoading = false);
+      }
+      debugPrint('Error loading posts: $e');
+    }
+  }
+
+  Future<void> _loadMorePosts() async {
+    if (_isLoadingMore || !_hasMorePosts || _lastDocument == null) return;
+
+    setState(() => _isLoadingMore = true);
+
+    try {
+      final snapshot = await FirebaseFirestore.instance
+          .collection('Users')
+          .doc(widget.uid)
+          .collection('Posts')
+          .orderBy('postDate', descending: true)
+          .startAfterDocument(_lastDocument!)
+          .limit(_postsPerPage)
+          .get();
+
+      if (mounted) {
+        setState(() {
+          _posts.addAll(snapshot.docs);
+          _lastDocument = snapshot.docs.isNotEmpty ? snapshot.docs.last : null;
+          _hasMorePosts = snapshot.docs.length == _postsPerPage;
+          _isLoadingMore = false;
+        });
+        
+        // Preload post data for newly loaded posts
+        _preloadPostData(snapshot.docs);
+      }
+    } catch (e) {
+      if (mounted) {
+        setState(() => _isLoadingMore = false);
+      }
+      debugPrint('Error loading more posts: $e');
+    }
+  }
+
+  void _preloadPostData(List<QueryDocumentSnapshot> docs) {
+    for (var doc in docs) {
+      if (!postDataCache.containsKey(doc.id)) {
+        FirebaseFirestore.instance
+            .collection('Posts')
+            .doc(doc.id)
+            .get()
+            .then((snapshot) {
+          if (snapshot.exists && mounted) {
+            setState(() {
+              postDataCache[doc.id] = snapshot.data()!;
+            });
+          }
+        });
+      }
+    }
+  }
+
+  void _onScroll() {
+    if (_scrollController.position.pixels >=
+        _scrollController.position.maxScrollExtent - 500) {
+      _loadMorePosts();
+    }
+  }
+
+  Future<void> _getIsFollowed() async {
+    try {
+      final doc = await FirebaseFirestore.instance
+          .collection('Users')
+          .doc(currentUid)
+          .collection('Following')
+          .doc(widget.uid)
+          .get();
+
+      if (mounted) {
+        setState(() => isFollowed = doc.exists);
+      }
+    } catch (e) {
+      debugPrint('Error checking follow status: $e');
+    }
+  }
+
+  Future<void> _getPostCount() async {
+    try {
+      final snapshot = await FirebaseFirestore.instance
+          .collection('Users')
+          .doc(widget.uid)
+          .collection('Posts')
+          .count()
+          .get();
+
+      if (mounted) {
+        setState(() => postCount = snapshot.count ?? 0);
+      }
+    } catch (e) {
+      debugPrint('Error getting post count: $e');
+    }
+  }
+
+  Future<void> _handleRefresh() async {
+    setState(() {
+      _posts.clear();
+      _lastDocument = null;
+      _hasMorePosts = true;
+      postDataCache.clear();
+    });
+    
+    await Future.wait([
+      _loadInitialPosts(),
+      _getIsFollowed(),
+      _getPostCount(),
+    ]);
+  }
+
+  Future<void> _toggleFollow() async {
+    try {
+      if (isFollowed) {
+        await FirebaseFirestore.instance
+            .collection('Users')
+            .doc(currentUid)
+            .collection('Following')
+            .doc(widget.uid)
+            .delete();
+        await FirebaseMessaging.instance
+            .unsubscribeFromTopic("user_followers_${widget.uid}");
+      } else {
+        await FirebaseFirestore.instance
+            .collection('Users')
+            .doc(currentUid)
+            .collection('Following')
+            .doc(widget.uid)
+            .set({});
+        
+        await requestNotificationPermission();
+        await FirebaseMessaging.instance
+            .subscribeToTopic("user_followers_${widget.uid}");
+        debugPrint("subscribed to user_followers_${widget.uid}");
+      }
+      
+      if (mounted) {
+        setState(() => isFollowed = !isFollowed);
+      }
+    } catch (e) {
+      debugPrint('Error toggling follow: $e');
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text('Failed to update follow status')),
+        );
+      }
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    super.build(context); // Required for AutomaticKeepAliveClientMixin
     return Scaffold(
       appBar: AppBar(
-        title: const Text('Profile Page'),
+        title: Text('@${widget.userData['displayName'] ?? 'User'}'),
       ),
-      body: Column(
-        children: [
-          Padding(
-            padding: const EdgeInsets.all(8.0),
-            child: Row(
-              crossAxisAlignment: CrossAxisAlignment.center,
-              spacing: 15,
-              children: [
-                CircleAvatar(
-                  radius: 35,
-                  backgroundImage: NetworkImage(
-                    widget.userData['profilePictureUrl']!,
-                  ),
-                ),
-                Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    Text(
-                      widget.userData['displayName']!,
-                      style: const TextStyle(
-                        fontSize: 18,
-                      ),
-                    ),
-                    if (currentUid != widget.uid)
-                    GestureDetector(
-                      onTap: () async {
-                        if (isFollowed) {
-                          FirebaseFirestore.instance.collection('Users').doc(currentUid).collection('Following').doc(widget.uid).delete();
-                          FirebaseMessaging.instance.unsubscribeFromTopic("user_followers_${widget.uid}");
-                        } else {
-                          FirebaseFirestore.instance.collection('Users').doc(currentUid).collection('Following').doc(widget.uid).set({});
-                          
-                          await requestNotificationPermission();
-
-                          FirebaseMessaging.instance.subscribeToTopic("user_followers_${widget.uid}");
-                          debugPrint("subscribed to user_followers_${widget.uid}");
-                        }
-                        setState(() {
-                          isFollowed = !(isFollowed);
-                        });
-                      }, 
-                      child: Container(
-                        width: 125,
-                        height: 35,
-                        decoration: BoxDecoration(
-                          color: isFollowed 
-                            ? Color.fromARGB(255, 39, 43, 51)
-                            : Colors.deepPurple,
-                          borderRadius: BorderRadius.circular(10)
-                        ),
-                        child: Center(child: Text((isFollowed) ? 'Followed' : 'Follow'))
-                      )
-                    )
-                  ],
-                ),
-              ],
+      body: RefreshIndicator(
+        onRefresh: _handleRefresh,
+        child: CustomScrollView(
+          controller: _scrollController,
+          slivers: [
+            SliverToBoxAdapter(
+              child: _buildProfileHeader(),
             ),
-          ),
-          Divider(height: 5, thickness: .5,),
-          FutureBuilder(
-            future: userPosts,
-            builder: (context, snapshot) {
-              if (snapshot.connectionState == ConnectionState.waiting) {
-                return const Center(child: CircularProgressIndicator());
-              } else if (snapshot.hasError) {
-                return const Center(child: Text('Error loading data'));
-              } else if (snapshot.hasData) {
-                final data = snapshot.data;
-                if (data == null || data.docs.isEmpty) {
-                  return const Text('No posts found.');
-                }
-                return GridView.builder(
-                  shrinkWrap: true,
-                  physics: const NeverScrollableScrollPhysics(),
+            
+            const SliverToBoxAdapter(
+              child: Divider(height: 1, thickness: 0.5),
+            ),
+            
+            if (_isInitialLoading)
+              SliverToBoxAdapter(
+                child: _buildSkeletonGrid(),
+              )
+            else if (_posts.isEmpty)
+              SliverFillRemaining(
+                child: _buildEmptyState(),
+              )
+            else
+              SliverPadding(
+                padding: const EdgeInsets.all(1),
+                sliver: SliverGrid(
                   gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
                     crossAxisCount: 3,
                     crossAxisSpacing: 1,
                     mainAxisSpacing: 1,
-                    childAspectRatio: .75,
+                    childAspectRatio: 0.75,
                   ),
-                  itemCount: data.docs.length,
-                  itemBuilder: (context, index) {
-                    final doc = data.docs[index];
-                    postDataCache[doc.id] ??= FirebaseFirestore.instance.collection('Posts').doc(doc.id).get();
-                    return FutureBuilder(
-                      future: postDataCache[doc.id],
-                      builder: (context, snapshot) {
-                        if (snapshot.connectionState == ConnectionState.waiting) {
-                          return const Center(child: CircularProgressIndicator());
-                        } else if (snapshot.hasError) {
-                          return const Center(child: Text('Error loading data'));
-                        } else if (snapshot.hasData) {
-                          final post = (snapshot.data)?.data();
-                          if (post == null){
-                            return Container();
-                          }
-                          return GestureDetector(
-                            onTap: () {
-                              Navigator.push(
-                                context,
-                                MaterialPageRoute(
-                                  builder: (context) => PostPage(
-                                    docs: data.docs,
-                                    initialIndex: index,   // pass the index you want to scroll to
-                                  ),
-                                ),
-                              );
-                            },
-                            onLongPress: (){
-                              ImageOverlay.show(
-                                context,
-                                post['imageDetails'][0]
-                              );
-                            },
-                            child: CachedNetworkImage(
-                              imageUrl: 'https://pub-b665727283304785a65fc86be829fa67.r2.dev/${post['imageDetails'][0]['imageId']}',
-                              fit: BoxFit.cover,
-                              placeholder: (context, url) {
-                                return Center(child: CircularProgressIndicator());
-                              },
-                            ),
-                          );
-                        } else {
-                          return const Center(child: Text('No data'));
-                        }
-                      },
-                    );
-                  },
-                );
-              } else {
-                return const Center(child: Text('No data available'));
-              }
-            },
+                  delegate: SliverChildBuilderDelegate(
+                    (context, index) {
+                      return _buildGridItem(_posts[index], index);
+                    },
+                    childCount: _posts.length,
+                  ),
+                ),
+              ),
+            
+            // Loading More Indicator
+            if (_isLoadingMore)
+              const SliverToBoxAdapter(
+                child: Padding(
+                  padding: EdgeInsets.all(16.0),
+                  child: Center(child: CircularProgressIndicator()),
+                ),
+              ),
+            
+            // Bottom padding
+            const SliverToBoxAdapter(
+              child: SizedBox(height: 16),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  Widget _buildProfileHeader() {
+    return Padding(
+      padding: const EdgeInsets.all(16.0),
+      child: Column(
+        children: [
+          Row(
+            crossAxisAlignment: CrossAxisAlignment.center,
+            children: [
+              Hero(
+                tag: 'profile_${widget.uid}',
+                child: CircleAvatar(
+                  radius: 35,
+                  backgroundImage: NetworkImage(
+                    widget.userData['profilePictureUrl'] ?? '',
+                  ),
+                ),
+              ),
+              const SizedBox(width: 20),
+                        
+              Column(
+                children: [
+                  Align(
+                    alignment: Alignment.centerLeft,
+                    child: Text(
+                      widget.userData['displayName'] ?? 'User',
+                      style: const TextStyle(
+                        fontSize: 16,
+                        fontWeight: FontWeight.w600,
+                      ),
+                    ),
+                  ),            
+                  const SizedBox(height: 6),
+                  Row(
+                    mainAxisAlignment: MainAxisAlignment.spaceEvenly,
+                    children: [
+                      _buildStatColumn('Posts', postCount),
+                    ],
+                  ),
+                ],
+              ),
+            ],
+          ),
+          
+          const SizedBox(height: 16),
+          
+          // Follow Button (only show if not own profile)
+          if (currentUid != widget.uid)
+            SizedBox(
+              width: double.infinity,
+              height: 42,
+              child: OutlinedButton(
+                onPressed: _toggleFollow,
+                style: OutlinedButton.styleFrom(
+                  backgroundColor: isFollowed 
+                      ? Colors.transparent 
+                      : Colors.deepPurple,
+                  foregroundColor: isFollowed 
+                      ? Colors.white 
+                      : Colors.white,
+                  side: BorderSide(
+                    color: isFollowed 
+                        ? Colors.grey.shade700 
+                        : Colors.deepPurple,
+                    width: 1,
+                  ),
+                  shape: RoundedRectangleBorder(
+                    borderRadius: BorderRadius.circular(10),
+                  ),
+                ),
+                child: Text(
+                  isFollowed ? 'Following' : 'Follow',
+                  style: const TextStyle(
+                    fontSize: 15,
+                    fontWeight: FontWeight.w600,
+                  ),
+                ),
+              ),
+            ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildStatColumn(String label, int count) {
+    return Row(
+      crossAxisAlignment: CrossAxisAlignment.baseline,
+      textBaseline: TextBaseline.alphabetic,
+      mainAxisSize: MainAxisSize.min,
+      children: [
+        Text(
+          count.toString(),
+          style: const TextStyle(
+            fontSize: 20,
+            fontWeight: FontWeight.bold,
+          ),
+        ),
+        const SizedBox(width: 4),
+        Text(
+          label,
+          style: TextStyle(
+            fontSize: 14,
+            color: Colors.grey.shade400,
+          ),
+        ),
+      ],
+    );
+  }
+
+  Widget _buildGridItem(QueryDocumentSnapshot doc, int index) {
+    final cachedData = postDataCache[doc.id];
+    
+    if (cachedData == null) {
+      return _buildSkeletonItem();
+    }
+    
+    return GestureDetector(
+      onTap: () {
+        Navigator.push(
+          context,
+          MaterialPageRoute(
+            builder: (context) => PostPage(
+              docs: _posts,
+              initialIndex: index,
+            ),
+          ),
+        );
+      },
+      onLongPress: () {
+        if (cachedData['imageDetails'] != null && 
+            cachedData['imageDetails'].isNotEmpty) {
+          ImageOverlay.show(
+            context,
+            cachedData['imageDetails'][0],
+          );
+        }
+      },
+      child: CachedNetworkImage(
+        imageUrl: cachedData['imageDetails'] != null && 
+                   cachedData['imageDetails'].isNotEmpty
+            ? 'https://pub-b665727283304785a65fc86be829fa67.r2.dev/${cachedData['imageDetails'][0]['imageId']}'
+            : '',
+        cacheKey: cachedData['imageDetails'] != null && 
+                   cachedData['imageDetails'].isNotEmpty
+            ? cachedData['imageDetails'][0]['imageId']
+            : null,
+        fit: BoxFit.cover,
+        placeholder: (context, url) => _buildSkeletonItem(),
+        errorWidget: (context, url, error) => Container(
+          color: Colors.grey.shade900,
+          child: const Icon(Icons.error_outline, color: Colors.grey),
+        ),
+      ),
+    );
+  }
+
+  Widget _buildSkeletonItem() {
+    return Container(
+      decoration: BoxDecoration(
+        color: Colors.grey.shade900,
+      ),
+      child: const Center(
+        child: CircularProgressIndicator(strokeWidth: 2),
+      ),
+    );
+  }
+
+  Widget _buildSkeletonGrid() {
+    return Padding(
+      padding: const EdgeInsets.all(1),
+      child: GridView.builder(
+        shrinkWrap: true,
+        physics: const NeverScrollableScrollPhysics(),
+        gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
+          crossAxisCount: 3,
+          crossAxisSpacing: 1,
+          mainAxisSpacing: 1,
+          childAspectRatio: 0.75,
+        ),
+        itemCount: 9,
+        itemBuilder: (context, index) => _buildSkeletonItem(),
+      ),
+    );
+  }
+
+  Widget _buildEmptyState() {
+    return Center(
+      child: Column(
+        mainAxisAlignment: MainAxisAlignment.center,
+        children: [
+          Icon(
+            Icons.photo_library_outlined,
+            size: 80,
+            color: Colors.grey.shade700,
+          ),
+          const SizedBox(height: 16),
+          Text(
+            'No posts yet',
+            style: TextStyle(
+              fontSize: 20,
+              fontWeight: FontWeight.w600,
+              color: Colors.grey.shade400,
+            ),
+          ),
+          const SizedBox(height: 8),
+          Text(
+            currentUid == widget.uid 
+                ? 'Share your first photo or video'
+                : 'When they post, you\'ll see them here',
+            style: TextStyle(
+              fontSize: 14,
+              color: Colors.grey.shade600,
+            ),
           ),
         ],
-      )
+      ),
     );
   }
 }
-
 
 class PostPage extends StatefulWidget {
   final List<QueryDocumentSnapshot> docs;
   final int initialIndex;
 
   const PostPage({
+    super.key,
     required this.docs,
     required this.initialIndex,
   });
@@ -203,39 +533,36 @@ class _PostPageState extends State<PostPage> {
   final likes = FirebaseFirestore.instance.collection('Likes');
 
   @override
-  void initState() {
-    super.initState();
-
-    // Scroll immediately after the list is built
-    WidgetsBinding.instance.addPostFrameCallback((_) {
-      _scrollController.scrollTo(
-        index: widget.initialIndex,
-        duration: const Duration(milliseconds: 1),
-        curve: Curves.easeInOut,
-      );
-    });
-  }
-
-  @override
   Widget build(BuildContext context) {
     return Scaffold(
-      appBar: AppBar(),
+      appBar: AppBar(
+        title: const Text('Posts'),
+      ),
       body: ScrollablePositionedList.builder(
         itemScrollController: _scrollController,
+        initialScrollIndex: widget.initialIndex,
         itemCount: widget.docs.length,
         itemBuilder: (context, i) {
-          return FutureBuilder(
+          return FutureBuilder<DocumentSnapshot>(
             future: FirebaseFirestore.instance
                 .collection('Posts')
                 .doc(widget.docs[i].id)
                 .get(),
             builder: (context, snapshot) {
               if (!snapshot.hasData) {
-                return const Center(child: CircularProgressIndicator());
+                return const SizedBox(
+                  height: 400,
+                  child: Center(child: CircularProgressIndicator()),
+                );
+              }
+
+              final data = snapshot.data?.data();
+              if (data == null) {
+                return const SizedBox.shrink();
               }
 
               return PostTemplate(
-                postData: snapshot.data!.data()!,
+                postData: data as Map<String, dynamic>,
                 favorited: likes.doc(widget.docs[i].id),
                 postId: widget.docs[i].id,
               );
@@ -257,8 +584,8 @@ Future<void> requestNotificationPermission() async {
   );
 
   if (settings.authorizationStatus == AuthorizationStatus.authorized) {
-    print('User granted permission');
+    debugPrint('User granted permission');
   } else {
-    print('User declined or has not accepted permission');
+    debugPrint('User declined or has not accepted permission');
   }
 }
