@@ -68,6 +68,7 @@ class _ChallengeDetailsState extends ConsumerState<ChallengeDetails> {
       if (!mounted) return;
       precacheImage(
         const AssetImage('assets/images/color-hunt-header.jpg'),
+        size: Size(MediaQuery.sizeOf(context).width/(2/3), 100),
         context,
       );
     });
@@ -75,6 +76,13 @@ class _ChallengeDetailsState extends ConsumerState<ChallengeDetails> {
 
   @override
   Widget build(BuildContext context) {
+    int rows = int.tryParse(
+      (widget.data['gridSize'] ?? "3x3")
+          .toLowerCase()
+          .split('x')
+          .first,
+    ) ?? 3;
+
     return Scaffold(
       body: CustomScrollView(
         slivers: [
@@ -196,18 +204,14 @@ class _ChallengeDetailsState extends ConsumerState<ChallengeDetails> {
                     shrinkWrap: true,
                     padding: EdgeInsets.only(top: 10),
                     gridDelegate: SliverGridDelegateWithFixedCrossAxisCount(
-                      crossAxisCount: int.tryParse(
-                        (widget.data['gridSize'] ?? "3x3")
-                            .toLowerCase()
-                            .split('x')
-                            .first,
-                      ) ?? 3,
+                      crossAxisCount: rows,
                       crossAxisSpacing: 4,
                       mainAxisSpacing: 4,
                       childAspectRatio: 1,
                     ),
                     itemCount: widget.data['maxProgress'],
                     itemBuilder: (context, index) {
+   
                       return GestureDetector(
                         onTap: () async {
                           final ImagePicker picker = ImagePicker();
@@ -280,11 +284,22 @@ class _ChallengeDetailsState extends ConsumerState<ChallengeDetails> {
                                   child: Stack(
                                     fit: StackFit.expand,
                                     children: [
-                                      Image.file(
-                                        fit: BoxFit.cover,
-                                        File(selectedImages[index]!),
-                                        gaplessPlayback: true,
-                                        cacheWidth: 512,
+                                      LayoutBuilder(
+                                        builder: (context, constraints) {
+                                          final pixelRatio = MediaQuery.of(context).devicePixelRatio;
+                                          final size = (constraints.maxWidth * pixelRatio*2).round();
+                                          
+                                          return Image(
+                                            image: ResizeImage(
+                                              FileImage(File(selectedImages[index]!)),
+                                              width: size,
+                                              height: size,
+                                              policy: ResizeImagePolicy.fit,
+                                            ),
+                                            fit: BoxFit.cover,
+                                            gaplessPlayback: true,
+                                          );
+                                        },
                                       ),
                                       Container(
                                         decoration: BoxDecoration(
