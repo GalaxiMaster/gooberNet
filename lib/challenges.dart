@@ -21,8 +21,21 @@ class ChallengesPage extends ConsumerStatefulWidget {
   _ChallengesPageState createState() => _ChallengesPageState();
 }
 
-class _ChallengesPageState extends ConsumerState<ChallengesPage> {
+class _ChallengesPageState extends ConsumerState<ChallengesPage> with SingleTickerProviderStateMixin {
   Map<String, Map<String, dynamic>> userChallenges = {};
+  late TabController _tabController;
+
+  @override
+  void initState() {
+    super.initState();
+    _tabController = TabController(length: 2, vsync: this);
+  }
+
+  @override
+  void dispose() {
+    _tabController.dispose();
+    super.dispose();
+  }
 
   Duration getTimeRemaining(DateTime startTime) {
     DateTime now = DateTime.now();
@@ -37,9 +50,50 @@ class _ChallengesPageState extends ConsumerState<ChallengesPage> {
     final customChallengesAsync = ref.watch(
       userChallengesProvider(FirebaseAuth.instance.currentUser!.uid),
     );
-    final globalJoinsAsync= ref.watch(
+    final globalJoinsAsync = ref.watch(
       globalJoinsProvider(FirebaseAuth.instance.currentUser!.uid),
     );
+    
+    return Column(
+      children: [
+        // TabBar
+        Container(
+          color: Colors.transparent,
+          child: TabBar(
+            controller: _tabController,
+            indicatorColor: Theme.of(context).colorScheme.primary,
+            indicatorWeight: 3,
+            labelColor: Colors.white,
+            unselectedLabelColor: Colors.grey,
+            labelStyle: GoogleFonts.googleSansCode(
+              fontSize: 15,
+              fontWeight: FontWeight.w600,
+            ),
+            tabs: const [
+              Tab(text: 'ACTIVE'),
+              Tab(text: 'COMPLETED'),
+            ],
+          ),
+        ),
+        // Tab Content
+        Expanded(
+          child: TabBarView(
+            controller: _tabController,
+            children: [
+              _buildActiveTab(allChallengesAsync, customChallengesAsync, globalJoinsAsync),
+              _buildCompletedTab(allChallengesAsync, customChallengesAsync, globalJoinsAsync),
+            ],
+          ),
+        ),
+      ],
+    );
+  }
+
+  Widget _buildActiveTab(
+    AsyncValue<Map<String, Challenge>> allChallengesAsync,
+    AsyncValue<Map<String, Challenge>> customChallengesAsync,
+    AsyncValue<Map> globalJoinsAsync,
+  ) {
     return Padding(
       padding: const EdgeInsets.all(8.0),
       child: SingleChildScrollView(
@@ -56,17 +110,37 @@ class _ChallengesPageState extends ConsumerState<ChallengesPage> {
             ),
             allChallengesAsync.when(
               data: (allChallenges) {
+                // Filter out completed challenges
+                final activeChallenges = Map.fromEntries(
+                  allChallenges.entries.where((entry) {
+                    final challenge = entry.value;
+                    return challenge.progressCount.length < (challenge.data['maxProgress'] ?? challenge.progressTotal);
+                  }),
+                );
+                
+                if (activeChallenges.isEmpty) {
+                  return Padding(
+                    padding: const EdgeInsets.all(32.0),
+                    child: Center(
+                      child: Text(
+                        'No active global challenges',
+                        style: TextStyle(color: Colors.grey[500]),
+                      ),
+                    ),
+                  );
+                }
+                
                 return ListView.builder(
-                  itemCount: allChallenges.length,
+                  itemCount: activeChallenges.length,
                   shrinkWrap: true,
                   physics: NeverScrollableScrollPhysics(),
                   itemBuilder: (context, index) {
-                    final challenge = allChallenges.entries.toList()[index];
+                    final challenge = activeChallenges.entries.toList()[index];
                     final String challengeId = challenge.key;
                     final Challenge data = challenge.value;
 
                     return globalJoinsAsync.maybeWhen(
-                      data: (joinsData){
+                      data: (joinsData) {
                         bool isJoined = joinsData.containsKey(challenge.key);
                         return GestureDetector(
                           onTap: () => Navigator.push(
@@ -89,11 +163,7 @@ class _ChallengesPageState extends ConsumerState<ChallengesPage> {
                                 children: [
                                   _buildHeader(data.toMap()),
                                   const SizedBox(height: 10),
-
-                                  // Show Progress bar ONLY if joined, using cached data
                                   if (isJoined) _buildProgressBar(challenge.value),
-    
-
                                   _buildActionButtons(challengeId, isJoined),
                                 ],
                               ),
@@ -101,7 +171,7 @@ class _ChallengesPageState extends ConsumerState<ChallengesPage> {
                           ),
                         );
                       },
-                      orElse: ()=>SizedBox.shrink()
+                      orElse: () => SizedBox.shrink(),
                     );
                   },
                 );
@@ -120,12 +190,32 @@ class _ChallengesPageState extends ConsumerState<ChallengesPage> {
             ),
             customChallengesAsync.when(
               data: (customChallenges) {
+                // Filter out completed challenges
+                final activeChallenges = Map.fromEntries(
+                  customChallenges.entries.where((entry) {
+                    final challenge = entry.value;
+                    return challenge.progressCount.length < (challenge.data['maxProgress'] ?? challenge.progressTotal);
+                  }),
+                );
+                
+                if (activeChallenges.isEmpty) {
+                  return Padding(
+                    padding: const EdgeInsets.all(32.0),
+                    child: Center(
+                      child: Text(
+                        'No active custom challenges',
+                        style: TextStyle(color: Colors.grey[500]),
+                      ),
+                    ),
+                  );
+                }
+                
                 return ListView.builder(
-                  itemCount: customChallenges.length,
+                  itemCount: activeChallenges.length,
                   shrinkWrap: true,
                   physics: NeverScrollableScrollPhysics(),
                   itemBuilder: (context, index) {
-                    final challenge = customChallenges.entries.toList()[index];
+                    final challenge = activeChallenges.entries.toList()[index];
                     final Map data = challenge.value.toMap();
 
                     return GestureDetector(
@@ -138,7 +228,7 @@ class _ChallengesPageState extends ConsumerState<ChallengesPage> {
                           ),
                         ),
                       ),
-                      onLongPress: (){
+                      onLongPress: () {
                         showModalBottomSheet(
                           context: context,
                           builder: (ctx) {
@@ -152,7 +242,7 @@ class _ChallengesPageState extends ConsumerState<ChallengesPage> {
                                     title: Text('Delete Challenge'),
                                     onTap: () async {
                                       User? currentUser = FirebaseAuth.instance.currentUser;
-                                      if (currentUser == null) return; // Todo stop fetching every time
+                                      if (currentUser == null) return;
 
                                       final repo = await ref.watch(repositoryProvider(currentUser.uid).future);
                                       await repo.deleteUserChallenge(challenge.key);
@@ -203,9 +293,271 @@ class _ChallengesPageState extends ConsumerState<ChallengesPage> {
                                 ],
                               ),
                               const SizedBox(height: 10),
-                              _buildProgressBar(
-                                challenge.value
+                              _buildProgressBar(challenge.value),
+                            ],
+                          ),
+                        ),
+                      ),
+                    );
+                  },
+                );
+              },
+              error: (error, trace) =>
+                  Text('Failed to get data. Error: $error'),
+              loading: () => CircularProgressIndicator(),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  Widget _buildCompletedTab(
+    AsyncValue<Map<String, Challenge>> allChallengesAsync,
+    AsyncValue<Map<String, Challenge>> customChallengesAsync,
+    AsyncValue<Map> globalJoinsAsync,
+  ) {
+    return Padding(
+      padding: const EdgeInsets.all(8.0),
+      child: SingleChildScrollView(
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Padding(
+              padding: const EdgeInsets.symmetric(horizontal: 10),
+              child: Text(
+                'Global',
+                style: GoogleFonts.googleSansCode(fontSize: 16),
+              ),
+            ),
+            allChallengesAsync.when(
+              data: (allChallenges) {
+                // Filter only completed challenges
+                final completedChallenges = Map.fromEntries(
+                  allChallenges.entries.where((entry) {
+                    final challenge = entry.value;
+                    return challenge.progressCount.length >= (challenge.data['maxProgress'] ?? challenge.progressTotal);
+                  }),
+                );
+                
+                if (completedChallenges.isEmpty) {
+                  return Padding(
+                    padding: const EdgeInsets.all(32.0),
+                    child: Center(
+                      child: Column(
+                        children: [
+                          Icon(
+                            Icons.emoji_events_outlined,
+                            size: 64,
+                            color: Colors.grey[700],
+                          ),
+                          const SizedBox(height: 16),
+                          Text(
+                            'No completed global challenges yet',
+                            style: GoogleFonts.googleSansCode(
+                              fontSize: 16,
+                              color: Colors.grey[500],
+                            ),
+                          ),
+                        ],
+                      ),
+                    ),
+                  );
+                }
+                
+                return ListView.builder(
+                  itemCount: completedChallenges.length,
+                  shrinkWrap: true,
+                  physics: NeverScrollableScrollPhysics(),
+                  itemBuilder: (context, index) {
+                    final challenge = completedChallenges.entries.toList()[index];
+                    // final String challengeId = challenge.key;
+                    final Challenge data = challenge.value;
+
+                    return GestureDetector(
+                      onTap: () => Navigator.push(
+                        context,
+                        MaterialPageRoute(
+                          builder: (context) => ChallengeDetails(
+                            data: data.toMap(),
+                            challengeId: challenge.key,
+                          ),
+                        ),
+                      ),
+                      child: Card(
+                        color: Colors.green.withValues(alpha: 0.1),
+                        shape: RoundedRectangleBorder(
+                          borderRadius: BorderRadius.circular(12),
+                          side: BorderSide(
+                            color: Colors.green.withValues(alpha: 0.3),
+                            width: 1.5,
+                          ),
+                        ),
+                        child: Padding(
+                          padding: const EdgeInsets.symmetric(
+                            horizontal: 14,
+                            vertical: 12,
+                          ),
+                          child: Column(
+                            children: [
+                              Row(
+                                children: [
+                                  Icon(
+                                    Icons.check_circle,
+                                    color: Colors.green,
+                                    size: 20,
+                                  ),
+                                  const SizedBox(width: 8),
+                                  Expanded(
+                                    child: Column(
+                                      crossAxisAlignment: CrossAxisAlignment.start,
+                                      children: [
+                                        Text(
+                                          data.data['name'],
+                                          style: const TextStyle(
+                                            fontSize: 18,
+                                            fontWeight: FontWeight.bold,
+                                          ),
+                                        ),
+                                        Text(
+                                          'Completed',
+                                          style: TextStyle(
+                                            color: Colors.green,
+                                            fontSize: 12,
+                                          ),
+                                        ),
+                                      ],
+                                    ),
+                                  ),
+                                  _buildChallengeIcon(),
+                                ],
                               ),
+                              const SizedBox(height: 10),
+                              _buildProgressBar(challenge.value),
+                            ],
+                          ),
+                        ),
+                      ),
+                    );
+                  },
+                );
+              },
+              error: (error, trace) =>
+                  Text('Failed to get data. Error: $error'),
+              loading: () => CircularProgressIndicator(),
+            ),
+            SizedBox(height: 10),
+            Padding(
+              padding: const EdgeInsets.symmetric(horizontal: 10),
+              child: Text(
+                'Custom',
+                style: GoogleFonts.googleSansCode(fontSize: 16),
+              ),
+            ),
+            customChallengesAsync.when(
+              data: (customChallenges) {
+                // Filter only completed challenges
+                final completedChallenges = Map.fromEntries(
+                  customChallenges.entries.where((entry) {
+                    final challenge = entry.value;
+                    return challenge.progressCount.length >= (challenge.data['maxProgress'] ?? challenge.progressTotal);
+                  }),
+                );
+                
+                if (completedChallenges.isEmpty) {
+                  return Padding(
+                    padding: const EdgeInsets.all(32.0),
+                    child: Center(
+                      child: Column(
+                        children: [
+                          Icon(
+                            Icons.emoji_events_outlined,
+                            size: 64,
+                            color: Colors.grey[700],
+                          ),
+                          const SizedBox(height: 16),
+                          Text(
+                            'No completed custom challenges yet',
+                            style: GoogleFonts.googleSansCode(
+                              fontSize: 16,
+                              color: Colors.grey[500],
+                            ),
+                          ),
+                        ],
+                      ),
+                    ),
+                  );
+                }
+                
+                return ListView.builder(
+                  itemCount: completedChallenges.length,
+                  shrinkWrap: true,
+                  physics: NeverScrollableScrollPhysics(),
+                  itemBuilder: (context, index) {
+                    final challenge = completedChallenges.entries.toList()[index];
+                    final Map data = challenge.value.toMap();
+
+                    return GestureDetector(
+                      onTap: () => Navigator.push(
+                        context,
+                        MaterialPageRoute(
+                          builder: (context) => ChallengeDetails(
+                            data: data,
+                            challengeId: challenge.key,
+                          ),
+                        ),
+                      ),
+                      child: Card(
+                        color: Colors.green.withValues(alpha: 0.1),
+                        shape: RoundedRectangleBorder(
+                          borderRadius: BorderRadius.circular(12),
+                          side: BorderSide(
+                            color: Colors.green.withValues(alpha: 0.3),
+                            width: 1.5,
+                          ),
+                        ),
+                        child: Padding(
+                          padding: const EdgeInsets.symmetric(
+                            horizontal: 14,
+                            vertical: 12,
+                          ),
+                          child: Column(
+                            children: [
+                              Row(
+                                children: [
+                                  Icon(
+                                    Icons.check_circle,
+                                    color: Colors.green,
+                                    size: 20,
+                                  ),
+                                  const SizedBox(width: 8),
+                                  Expanded(
+                                    child: Column(
+                                      crossAxisAlignment: CrossAxisAlignment.start,
+                                      children: [
+                                        Text(
+                                          data['name'],
+                                          style: const TextStyle(
+                                            fontSize: 18,
+                                            fontWeight: FontWeight.bold,
+                                          ),
+                                        ),
+                                        Text(
+                                          'Completed',
+                                          style: TextStyle(
+                                            color: Colors.green,
+                                            fontSize: 12,
+                                          ),
+                                        ),
+                                      ],
+                                    ),
+                                  ),
+                                  _buildChallengeIcon(),
+                                ],
+                              ),
+                              const SizedBox(height: 10),
+                              _buildProgressBar(challenge.value),
                             ],
                           ),
                         ),
@@ -328,7 +680,7 @@ class _ChallengesPageState extends ConsumerState<ChallengesPage> {
         child: Container(
           padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 5),
           decoration: BoxDecoration(
-            color: isJoined ? Colors.redAccent : Colors.teal.withBlue(200),
+            color: isJoined ? Colors.redAccent : Theme.of(context).colorScheme.primary.withBlue(200),
             borderRadius: BorderRadius.circular(30),
           ),
           child: Text(
@@ -370,6 +722,7 @@ class ChallengeDetails extends ConsumerStatefulWidget {
 
 class _ChallengeDetailsState extends ConsumerState<ChallengeDetails> {
   Map<int, String> selectedImages = {};
+
 
   // Save image to disk
   Future<void> _persistImage(int index, Uint8List bytes) async {
@@ -419,9 +772,9 @@ class _ChallengeDetailsState extends ConsumerState<ChallengeDetails> {
       body: CustomScrollView(
         slivers: [
           SliverAppBar(
-            expandedHeight: 120,
+            expandedHeight: 140,
             pinned: true,
-            backgroundColor: Colors.transparent,
+            backgroundColor: const Color.fromARGB(255, 0, 20, 20),
             elevation: 0,
             flexibleSpace: FlexibleSpaceBar(
               background: _HeaderImage(header: widget.data['name']),
@@ -431,53 +784,137 @@ class _ChallengeDetailsState extends ConsumerState<ChallengeDetails> {
             child: Padding(
               padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
               child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
+                  Card(
+                    elevation: 0,
+                    color: Colors.grey.withValues(alpha: 0.15),
+                    shape: RoundedRectangleBorder(
+                      borderRadius: BorderRadius.circular(16),
+                    ),
+                    child: Padding(
+                      padding: const EdgeInsets.all(8),
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          Padding(
+                            padding: const EdgeInsets.only(top: 6, left: 6),
+                            child: Row(
+                              children: [
+                                Icon(
+                                  Icons.palette,
+                                  color: hexToColor(widget.data['target']['hexApprox']),
+                                  size: 20,
+                                ),
+                                const SizedBox(width: 8),
+                                Row(
+                                  crossAxisAlignment: CrossAxisAlignment.baseline,
+                                  textBaseline: TextBaseline.alphabetic,
+                                  children: [
+                                    Text(
+                                      'Color: ',
+                                      style: TextStyle(
+                                        fontSize: 16,
+                                        color: Colors.grey[400],
+                                      ),
+                                    ),
+                                    Text(
+                                      widget.data['target']['colorName'],
+                                      style: GoogleFonts.vt323(
+                                        color: hexToColor(widget.data['target']['hexApprox']),
+                                        fontSize: 24,
+                                        fontWeight: FontWeight.bold,
+                                      ),
+                                    ),
+                                  ],
+                                ),
+                              ],
+                            ),
+                          ),
+                          const SizedBox(height: 8),
+                          Container(
+                            height: 35,
+                            decoration: BoxDecoration(
+                              color: hexToColor(widget.data['target']['hexApprox']),
+                              borderRadius: BorderRadius.circular(12),
+                              boxShadow: [
+                                BoxShadow(
+                                  color: hexToColor(widget.data['target']['hexApprox']).withValues(alpha: 0.4),
+                                  blurRadius: 12,
+                                  spreadRadius: .5,
+                                ),
+                              ],
+                            ),
+                          ),
+                        ],
+                      ),
+                    ),
+                  ),
+                  const SizedBox(height: 16),
+
                   Row(
+                    mainAxisAlignment: MainAxisAlignment.spaceBetween,
                     children: [
-                      Text('Color target: ', style: TextStyle(fontSize: 18)),
                       Text(
-                        widget.data['target']['colorName'],
-                        style: GoogleFonts.vt323(
-                          color: hexToColor(widget.data['target']['hexApprox']),
-                          fontSize: 22,
-                          fontWeight: FontWeight.bold,
+                        'Your Collection',
+                        style: GoogleFonts.googleSansCode(
+                          fontSize: 18,
+                          fontWeight: FontWeight.w600,
+                        ),
+                      ),
+                      AnimatedContainer(
+                        duration: Duration(milliseconds: 500),
+                        padding: const EdgeInsets.symmetric(
+                          horizontal: 12,
+                          vertical: 6,
+                        ),
+                        decoration: BoxDecoration(
+                          color: selectedImages.length/widget.data['maxProgress'] >= 1 ? Colors.green : Colors.grey.withValues(alpha: 0.2),
+                          borderRadius: BorderRadius.circular(20),
+                        ),
+                        child: Text(
+                          '${selectedImages.length}/${widget.data['maxProgress']}',
+                          style: GoogleFonts.googleSansCode(
+                            color: selectedImages.length/widget.data['maxProgress'] >= 1 ? Colors.white : Theme.of(context).colorScheme.primary,
+                            fontSize: 14,
+                            fontWeight: FontWeight.w600,
+                          ),
                         ),
                       ),
                     ],
                   ),
-                  Container(
-                    height: 20,
-                    decoration: BoxDecoration(
-                      color: hexToColor(widget.data['target']['hexApprox']),
-                      borderRadius: BorderRadius.circular(5),
-                    ),
-                  ),
+                
                   GridView.builder(
                     physics: const NeverScrollableScrollPhysics(),
+                    shrinkWrap: true,
+                    padding: EdgeInsets.only(top: 10),
                     gridDelegate: SliverGridDelegateWithFixedCrossAxisCount(
-                      crossAxisCount: int.tryParse((widget.data['gridSize'] ?? "3x3").toLowerCase().split('x').first) ?? 3,
-                      crossAxisSpacing: 2.5,
-                      mainAxisSpacing: 2.5,
-                      childAspectRatio: 1.0, // forces squares
+                      crossAxisCount: int.tryParse(
+                        (widget.data['gridSize'] ?? "3x3")
+                            .toLowerCase()
+                            .split('x')
+                            .first,
+                      ) ?? 3,
+                      crossAxisSpacing: 4,
+                      mainAxisSpacing: 4,
+                      childAspectRatio: 1,
                     ),
                     itemCount: widget.data['maxProgress'],
                     itemBuilder: (context, index) {
                       return GestureDetector(
                         onTap: () async {
                           final ImagePicker picker = ImagePicker();
-
                           final res = await picker.pickImage(
                             source: ImageSource.gallery,
-                            imageQuality: 100, // optional compression
+                            imageQuality: 100,
                           );
                           if (res != null) {
-                            final fileSize = await res.length(); // in bytes
-
-                            const maxSize = 5 * 1024 * 1024; // 5 MB limit
+                            final fileSize = await res.length();
+                            const maxSize = 5 * 1024 * 1024;
                             if (fileSize > maxSize) {
                               if (context.mounted) {
                                 ScaffoldMessenger.of(context).showSnackBar(
-                                  SnackBar(
+                                  const SnackBar(
                                     content: Text(
                                       "File too large. Maximum allowed is 5MB.",
                                     ),
@@ -488,11 +925,11 @@ class _ChallengeDetailsState extends ConsumerState<ChallengeDetails> {
                             }
                             Uint8List imageAsBytes = await res.readAsBytes();
                             String imagePath = res.path;
-
+                  
                             setState(() {
                               selectedImages[index] = imagePath;
                             });
-
+                  
                             final repo = await ref.watch(
                               repositoryProvider(
                                 FirebaseAuth.instance.currentUser!.uid,
@@ -508,122 +945,175 @@ class _ChallengeDetailsState extends ConsumerState<ChallengeDetails> {
                         onLongPress: () async {
                           if (selectedImages[index] != null) {
                             _deleteImage(index, selectedImages[index]!);
-                            final repo = await ref.watch(repositoryProvider(FirebaseAuth.instance.currentUser!.uid).future);
-                            await repo.recordImageRemoved(widget.challengeId, index);
+                            final repo = await ref.watch(
+                              repositoryProvider(
+                                FirebaseAuth.instance.currentUser!.uid,
+                              ).future,
+                            );
+                            await repo.recordImageRemoved(
+                              widget.challengeId,
+                              index,
+                            );
                             setState(() {
                               selectedImages.remove(index);
                             });
                           }
                         },
-                        child: ClipRRect(
-                          borderRadius: BorderRadius.circular(2.5),
-                          child: Container(
-                            decoration: BoxDecoration(color: Colors.blueGrey),
-                            child: selectedImages.containsKey(index)
-                                ? Image.file(
-                                    fit: BoxFit.cover,
-                                    // width: width,
-                                    // height: height,
-                                    File(selectedImages[index]!),
-                                    gaplessPlayback: true,
-                                    cacheWidth: 512,
-                                  )
-                                : Icon(Icons.upload),
+                        child: Container(
+                          padding: EdgeInsets.zero,
+                          decoration: BoxDecoration(
+                            color: selectedImages.containsKey(index)
+                                ? Colors.transparent
+                                : Colors.grey.withValues(alpha: 0.2),
+                            borderRadius: BorderRadius.circular(8),
                           ),
+                          child: selectedImages.containsKey(index)
+                              ? ClipRRect(
+                                  borderRadius: BorderRadius.circular(8),
+                                  child: Stack(
+                                    fit: StackFit.expand,
+                                    children: [
+                                      Image.file(
+                                        fit: BoxFit.cover,
+                                        File(selectedImages[index]!),
+                                        gaplessPlayback: true,
+                                        cacheWidth: 512,
+                                      ),
+                                      Container(
+                                        decoration: BoxDecoration(
+                                          gradient: LinearGradient(
+                                            begin: Alignment.topCenter,
+                                            end: Alignment.bottomCenter,
+                                            colors: [
+                                              Colors.transparent,
+                                              Colors.black.withValues(alpha: 0.1),
+                                            ],
+                                          ),
+                                        ),
+                                      ),
+                                    ],
+                                  ),
+                                )
+                              : Icon(
+                                  Icons.add_photo_alternate_outlined,
+                                  color: Colors.grey[600],
+                                  size: 32,
+                                ),
                         ),
                       );
                     },
-                    shrinkWrap: true,
                   ),
+                  const SizedBox(height: 24),
                   Row(
-                    spacing: 16,
                     children: [
-                      Container(
-                        padding: EdgeInsets.symmetric(horizontal: 8),
-                        decoration: BoxDecoration(
-                          color: Color.fromARGB(255, 40, 44, 52),
-                          borderRadius: BorderRadius.circular(40),
-                        ),
-                        child: TextButton.icon(
-                          onPressed: () async {
-                            List<int> gridSize;
-                            try {
-                              gridSize = List<int>.from((widget.data['gridSize'] ?? "3x3").toLowerCase().split('x').map(int.parse).toList());
-                              if (gridSize.length != 2) {
-                                throw Exception("Grid size invalid");
-                              }
-                              // add more validation later
-                            } catch (e) {
-                              debugPrint('invalid grid size $e');
-                              return; // Consider elevating error, but for now - silent error 
-                            }
-                            LoadingOverlay loadingOverlay = LoadingOverlay();
-                            loadingOverlay.showLoadingOverlay(context);
-                            File file = await createImageCollageCanvas(
-                              images: selectedImages,
-                              gridSize: gridSize,
-                            );
-                            loadingOverlay.removeLoadingOverlay();
-                            if (await file.exists()) {
-                              if (!context.mounted) return;
-                              postAndUpload([XFile(file.path)], context);
-                            }
-                          },
-                          label: Text(
-                            'Post',
-                            style: TextStyle(color: Colors.white),
+                      Expanded(
+                        child: ElevatedButton.icon(
+                          onPressed: selectedImages.isEmpty
+                              ? null
+                              : () async {
+                                  List<int> gridSize;
+                                  try {
+                                    gridSize = List<int>.from(
+                                      (widget.data['gridSize'] ?? "3x3")
+                                          .toLowerCase()
+                                          .split('x')
+                                          .map(int.parse)
+                                          .toList(),
+                                    );
+                                    if (gridSize.length != 2) {
+                                      throw Exception("Grid size invalid");
+                                    }
+                                  } catch (e) {
+                                    debugPrint('invalid grid size $e');
+                                    return;
+                                  }
+                                  LoadingOverlay loadingOverlay = LoadingOverlay();
+                                  loadingOverlay.showLoadingOverlay(context);
+                                  File file = await createImageCollageCanvas(
+                                    images: selectedImages,
+                                    gridSize: gridSize,
+                                  );
+                                  loadingOverlay.removeLoadingOverlay();
+                                  if (await file.exists()) {
+                                    if (!context.mounted) return;
+                                    postAndUpload([XFile(file.path)], context);
+                                  }
+                                },
+                          style: ElevatedButton.styleFrom(
+                            backgroundColor: const Color.fromARGB(255, 40, 44, 52),
+                            foregroundColor: Colors.white,
+                            padding: const EdgeInsets.symmetric(vertical: 16),
+                            shape: RoundedRectangleBorder(
+                              borderRadius: BorderRadius.circular(12),
+                            ),
+                            elevation: 0,
                           ),
-                          icon: Icon(Icons.post_add),
-                          iconAlignment: IconAlignment.end,
+                          icon: const Icon(Icons.post_add),
+                          label: const Text(
+                            'Post',
+                            style: TextStyle(fontSize: 16, fontWeight: FontWeight.w600),
+                          ),
                         ),
                       ),
-                      Container(
-                        padding: EdgeInsets.symmetric(horizontal: 8),
-                        decoration: BoxDecoration(
-                          color: Color.fromARGB(255, 40, 44, 52),
-                          borderRadius: BorderRadius.circular(40),
-                        ),
-                        child: TextButton.icon(
-                          onPressed: () async {
-                            List<int> gridSize;
-                            try {
-                              gridSize = List<int>.from((widget.data['gridSize'] ?? "3x3").toLowerCase().split('x').map(int.parse).toList());
-                              if (gridSize.length != 2) {
-                                throw Exception("Grid size invalid");
-                              }
-                              // add more validation later
-                            } catch (e) {
-                              debugPrint('invalid grid size $e');
-                              return; // Consider elevating error, but for now - silent error 
-                            }
-
-                            LoadingOverlay loadingOverlay = LoadingOverlay();
-                            loadingOverlay.showLoadingOverlay(context);
-                            File file = await createImageCollageCanvas(
-                              images: selectedImages,
-                              gridSize: gridSize,
-                            );
-                            if (await file.exists()) {
-                              await SharePlus.instance.share(
-                                ShareParams(
-                                  files: [XFile(file.path)],
-                                  previewThumbnail: XFile(file.path),
-                                  text: 'Your canvas',
-                                ),
-                              );
-                            }
-                            loadingOverlay.removeLoadingOverlay();
-                          },
-                          label: Text(
-                            'Share',
-                            style: TextStyle(color: Colors.white),
+                      const SizedBox(width: 12),
+                      Expanded(
+                        child: ElevatedButton.icon(
+                          onPressed: selectedImages.isEmpty
+                              ? null
+                              : () async {
+                                  List<int> gridSize;
+                                  try {
+                                    gridSize = List<int>.from(
+                                      (widget.data['gridSize'] ?? "3x3")
+                                          .toLowerCase()
+                                          .split('x')
+                                          .map(int.parse)
+                                          .toList(),
+                                    );
+                                    if (gridSize.length != 2) {
+                                      throw Exception("Grid size invalid");
+                                    }
+                                  } catch (e) {
+                                    debugPrint('invalid grid size $e');
+                                    return;
+                                  }
+              
+                                  LoadingOverlay loadingOverlay = LoadingOverlay();
+                                  loadingOverlay.showLoadingOverlay(context);
+                                  File file = await createImageCollageCanvas(
+                                    images: selectedImages,
+                                    gridSize: gridSize,
+                                  );
+                                  if (await file.exists()) {
+                                    await SharePlus.instance.share(
+                                      ShareParams(
+                                        files: [XFile(file.path)],
+                                        previewThumbnail: XFile(file.path),
+                                        text: 'Your canvas',
+                                      ),
+                                    );
+                                  }
+                                  loadingOverlay.removeLoadingOverlay();
+                                },
+                          style: ElevatedButton.styleFrom(
+                            backgroundColor: Theme.of(context).colorScheme.primary.withValues(alpha: 0.8),
+                            foregroundColor: Colors.white,
+                            padding: const EdgeInsets.symmetric(vertical: 16),
+                            shape: RoundedRectangleBorder(
+                              borderRadius: BorderRadius.circular(12),
+                            ),
+                            elevation: 0,
                           ),
-                          icon: Icon(Icons.share),
-                          iconAlignment: IconAlignment.end,
+                          icon: const Icon(Icons.share),
+                          label: const Text(
+                            'Share',
+                            style: TextStyle(fontSize: 16, fontWeight: FontWeight.w600),
+                          ),
                         ),
                       ),
                     ],
                   ),
+                  const SizedBox(height: 16),
                 ],
               ),
             ),
@@ -632,7 +1122,52 @@ class _ChallengeDetailsState extends ConsumerState<ChallengeDetails> {
       ),
     );
   }
+
+  // Widget _buildProgressIndicator() {
+  //   int current = selectedImages.length;
+  //   int total = widget.data['maxProgress'] ?? 9;
+  //   double progress = current / total;
+    
+  //   return Column(
+  //     crossAxisAlignment: CrossAxisAlignment.start,
+  //     children: [
+  //       Row(
+  //         mainAxisAlignment: MainAxisAlignment.spaceBetween,
+  //         children: [
+  //           Text(
+  //             'Progress',
+  //             style: TextStyle(
+  //               fontSize: 14,
+  //               color: Colors.grey[400],
+  //             ),
+  //           ),
+  //           Text(
+  //             '${(progress * 100).toStringAsFixed(0)}%',
+  //             style: GoogleFonts.googleSansCode(
+  //               fontSize: 14,
+  //               fontWeight: FontWeight.w600,
+  //               color: Theme.of(context).colorScheme.primary,
+  //             ),
+  //           ),
+  //         ],
+  //       ),
+  //       const SizedBox(height: 8),
+  //       ClipRRect(
+  //         borderRadius: BorderRadius.circular(8),
+  //         child: LinearProgressIndicator(
+  //           value: progress,
+  //           minHeight: 8,
+  //           backgroundColor: const Color.fromARGB(255, 59, 65, 77),
+  //           valueColor: AlwaysStoppedAnimation<Color>(
+  //             progress == 1.0 ? Colors.green : Theme.of(context).colorScheme.primary,
+  //           ),
+  //         ),
+  //       ),
+  //     ],
+  //   );
+  // }
 }
+
 
 class _HeaderImage extends StatelessWidget {
   final String header;
