@@ -3,7 +3,7 @@
 <br />
 <div align="center">
   <a href="https://github.com/GalaxiMaster/gooberNet">
-    <img src="https://cdn.worldvectorlogo.com/logos/flutter-2.svg" alt="Logo" width="80" height="80">
+    <img src="https://cdn.creazilla.com/icons/3253780/flutter-icon-lg.png" alt="Logo" width="80" height="80">
   </a>
 
   <h3 align="center">gooberNet</h3>
